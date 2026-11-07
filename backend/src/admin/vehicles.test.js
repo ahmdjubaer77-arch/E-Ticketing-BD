@@ -22,6 +22,16 @@ test("vehicle validation normalizes supported vehicle fields", () => {
   assert.equal(values.image, "https://cdn.example.com/vehicles/sakura.png");
 });
 
+test("vehicle registration accepts long values and characters without format restrictions", () => {
+  const { errors, values } = validateVehicleFields({
+    ...validVehicle,
+    registrationNumber: "dhaka metro-ba 15-4290",
+  }, { creating: true });
+
+  assert.deepEqual(errors, {});
+  assert.equal(values.registrationNumber, "DHAKA METRO-BA 15-4290");
+});
+
 test("vehicle validation rejects invalid transport, status, image, capacity, and extra fields", () => {
   const invalid = validateVehicleFields({
     ...validVehicle,

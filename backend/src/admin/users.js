@@ -198,6 +198,37 @@ export function createAdminUsersRouter() {
     }
   });
 
+  router.post("/admins", async (request, response, next) => {
+    try {
+      const { errors, values } = validateUserFields(request.body, { creating: true });
+      if (Object.keys(errors).length) {
+        return response.status(400).json({ success: false, message: "Please correct the highlighted fields.", errors });
+      }
+
+      const password = await bcrypt.hash(values.password, 12);
+      const user = await User.create({
+        fullName: values.fullName,
+        email: values.email,
+        phone: values.phone || "",
+        password,
+        role: "admin",
+        isActive: true,
+        isEmailVerified: true,
+        emailVerifiedAt: new Date(),
+      });
+      return response.status(201).json({
+        success: true,
+        message: "Administrator account created.",
+        data: { user: userResponse(user) },
+      });
+    } catch (error) {
+      if (isDuplicateKey(error)) {
+        return response.status(409).json({ success: false, message: "A user with this email already exists.", errors: { email: "Email address is already registered." } });
+      }
+      return next(error);
+    }
+  });
+
   router.post("/", async (request, response, next) => {
     try {
       const { errors, values } = validateUserFields(request.body, { creating: true });

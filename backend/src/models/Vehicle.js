@@ -3,7 +3,7 @@ import mongoose from "mongoose";
 const vehicleSchema = new mongoose.Schema(
   {
     name: { type: String, required: true, trim: true, minlength: 2, maxlength: 100 },
-    registrationNumber: { type: String, required: true, trim: true, uppercase: true, minlength: 2, maxlength: 20, unique: true },
+    registrationNumber: { type: String, required: true, trim: true, uppercase: true, minlength: 2, maxlength: 50, unique: true },
     transport: { type: String, enum: ["Bus", "Train", "Launch"], required: true },
     operatorId: { type: mongoose.Schema.Types.ObjectId, ref: "Operator", required: true, index: true },
     image: { type: String, default: "", maxlength: 2048 },

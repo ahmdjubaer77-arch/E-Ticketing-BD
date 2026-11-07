@@ -106,7 +106,7 @@ function operatorFromApi(operator, index = 0) {
 }
 
 function VehicleModal({ vehicle, vehicles, operators, onClose, onSave }) {
-  const firstOperator = operators[0]?.id ?? "";
+  const firstOperator = operators.find((operator) => operator.status === "active" && operator.transport === "Bus")?.id ?? "";
   const [values, setValues] = useState({
     name: vehicle?.name ?? "",
     registration: vehicle?.registration ?? "",
@@ -117,11 +117,15 @@ function VehicleModal({ vehicle, vehicles, operators, onClose, onSave }) {
     image: vehicle?.image ?? "",
   });
   const [errors, setErrors] = useState({});
+  const [formError, setFormError] = useState("");
   const [imageError, setImageError] = useState("");
   const [imageFile, setImageFile] = useState(null);
   const [removeImage, setRemoveImage] = useState(false);
   const [savedId, setSavedId] = useState("");
   const [saving, setSaving] = useState(false);
+  const compatibleOperators = operators.filter((operator) =>
+    operator.transport === values.transport
+    && (operator.status === "active" || operator.id === vehicle?.operatorId));
 
   useEffect(() => {
     if (!imageFile) return undefined;
@@ -132,15 +136,16 @@ function VehicleModal({ vehicle, vehicles, operators, onClose, onSave }) {
 
   useEffect(() => {
     function onKeyDown(event) {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape" && !saving) onClose();
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
+  }, [onClose, saving]);
 
   function update(field, value) {
     setValues((current) => ({ ...current, [field]: value }));
     setErrors((current) => ({ ...current, [field]: "" }));
+    setFormError("");
   }
 
   function chooseImage(event) {
@@ -163,16 +168,18 @@ function VehicleModal({ vehicle, vehicles, operators, onClose, onSave }) {
 
   async function submit(event) {
     event.preventDefault();
+    setFormError("");
+    setImageError("");
     const nextErrors = {};
-    if (values.name.trim().length < 2) nextErrors.name = "Enter a vehicle name with at least 2 characters.";
-    if (values.registration.trim().length < 4 || !/^[a-z0-9\s/-]+$/i.test(values.registration.trim())) {
-      nextErrors.registration = "Enter a valid registration number.";
+    if (values.name.trim().length < 2 || values.name.trim().length > 100) nextErrors.name = "Enter a vehicle name between 2 and 100 characters.";
+    if (values.registration.trim().length < 2 || values.registration.trim().length > 50) {
+      nextErrors.registration = "Enter a registration number between 2 and 50 characters.";
     }
     if (vehicles.some((item) => item.registration.toLowerCase() === values.registration.trim().toLowerCase() && item.id !== (savedId || vehicle?.id))) {
       nextErrors.registration = "A vehicle with this registration already exists.";
     }
-    if (!values.operatorId || !operators.some((operator) => operator.id === values.operatorId)) {
-      nextErrors.operatorId = "Select an available operator.";
+    if (!values.operatorId || !compatibleOperators.some((operator) => operator.id === values.operatorId)) {
+      nextErrors.operatorId = `Select an active ${values.transport} operator.`;
     }
     const seatCount = Number(values.seats);
     if (!Number.isInteger(seatCount) || seatCount < 1 || seatCount > 1000) nextErrors.seats = "Enter a seat capacity between 1 and 1,000.";
@@ -200,20 +207,39 @@ function VehicleModal({ vehicle, vehicles, operators, onClose, onSave }) {
       }
       onClose();
     } catch (error) {
-      setImageError(error.message);
+      const fieldNames = {
+        name: "name",
+        registrationNumber: "registration",
+        transport: "transport",
+        operatorId: "operatorId",
+        seatCapacity: "seats",
+        status: "status",
+      };
+      const fieldErrors = Object.fromEntries(
+        Object.entries(error.errors || {})
+          .filter(([field, message]) => fieldNames[field] && typeof message === "string")
+          .map(([field, message]) => [fieldNames[field], message]),
+      );
+      if (Object.keys(fieldErrors).length) {
+        setErrors((current) => ({ ...current, ...fieldErrors }));
+        setFormError("Please check the highlighted vehicle details.");
+      } else {
+        setFormError(error.message || "The vehicle could not be saved.");
+      }
     } finally {
       setSaving(false);
     }
   }
 
   return (
-    <div className="vehicle-modal-scrim" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+    <div className="vehicle-modal-scrim" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) onClose(); }}>
       <section className="vehicle-modal" role="dialog" aria-modal="true" aria-labelledby="vehicle-form-title">
         <header className="vehicle-modal-header">
           <div><span className="vehicle-eyebrow">{vehicle ? "VEHICLE PROFILE" : "FLEET MANAGEMENT"}</span><h2 id="vehicle-form-title">{vehicle ? "Edit vehicle" : "Add vehicle"}</h2><p>{vehicle ? "Update fleet details and vehicle availability." : "Add a vehicle to an operator's fleet."}</p></div>
-          <button className="vehicle-icon-button" type="button" aria-label="Close dialog" onClick={onClose}><X size={19} /></button>
+          <button className="vehicle-icon-button" type="button" aria-label="Close dialog" disabled={saving} onClick={onClose}><X size={19} /></button>
         </header>
         <form className="vehicle-form" onSubmit={submit} noValidate>
+          {formError && <p className="vehicle-error vehicle-form-error" role="alert">{formError}</p>}
           <div className="vehicle-image-field">
             <VehicleImage vehicle={{ ...values, color: vehicle?.color || "mint" }} large />
             <div><strong>Vehicle image</strong><small>PNG, JPG or WebP · Max 2 MB</small><label className="vehicle-upload-button"><Plus size={13} />Upload image<input type="file" accept="image/png,image/jpeg,image/webp" onChange={chooseImage} /></label>{imageError && <small className="vehicle-error">{imageError}</small>}</div>
@@ -222,12 +248,18 @@ function VehicleModal({ vehicle, vehicles, operators, onClose, onSave }) {
           <label className="vehicle-field"><span>Vehicle name</span><input autoFocus value={values.name} onChange={(event) => update("name", event.target.value)} placeholder="e.g. Sakura Executive Coach" aria-invalid={Boolean(errors.name)} />{errors.name && <small className="vehicle-error">{errors.name}</small>}</label>
           <label className="vehicle-field"><span>Registration number</span><input value={values.registration} onChange={(event) => update("registration", event.target.value)} placeholder="e.g. DHAKA-METRO-B-11-2841" aria-invalid={Boolean(errors.registration)} />{errors.registration && <small className="vehicle-error">{errors.registration}</small>}</label>
           <div className="vehicle-form-row">
-            <label className="vehicle-field"><span>Transport type</span><select value={values.transport} onChange={(event) => update("transport", event.target.value)}><option>Bus</option><option>Train</option><option>Launch</option></select></label>
+            <label className="vehicle-field"><span>Transport type</span><select value={values.transport} aria-invalid={Boolean(errors.transport)} onChange={(event) => {
+              const transport = event.target.value;
+              const matchingOperator = operators.find((operator) => operator.transport === transport && operator.status === "active");
+              setValues((current) => ({ ...current, transport, operatorId: matchingOperator?.id ?? "" }));
+              setErrors((current) => ({ ...current, transport: "", operatorId: "" }));
+              setFormError("");
+            }}><option>Bus</option><option>Train</option><option>Launch</option></select>{errors.transport && <small className="vehicle-error">{errors.transport}</small>}</label>
             <label className="vehicle-field"><span>Seat capacity</span><input type="number" min="1" max="1000" step="1" value={values.seats} onChange={(event) => update("seats", event.target.value)} placeholder="e.g. 40" aria-invalid={Boolean(errors.seats)} />{errors.seats && <small className="vehicle-error">{errors.seats}</small>}</label>
           </div>
-          <label className="vehicle-field"><span>Operator</span><select value={values.operatorId} onChange={(event) => update("operatorId", event.target.value)} aria-invalid={Boolean(errors.operatorId)}><option value="">Select an operator</option>{operators.map((operator) => <option value={operator.id} key={operator.id}>{operator.name} · {operator.id}</option>)}</select>{errors.operatorId && <small className="vehicle-error">{errors.operatorId}</small>}</label>
-          <label className="vehicle-field"><span>Vehicle status</span><select value={values.status} onChange={(event) => update("status", event.target.value)}><option value="active">Active</option><option value="inactive">Inactive</option><option value="maintenance">Maintenance</option></select></label>
-          <footer className="vehicle-form-actions"><button className="vehicle-button secondary" type="button" onClick={onClose} disabled={saving}>Cancel</button><button className="vehicle-button primary" type="submit" disabled={saving}>{saving ? "Saving..." : vehicle ? "Save changes" : "Add vehicle"}</button></footer>
+          <label className="vehicle-field"><span>Operator</span><select value={values.operatorId} onChange={(event) => update("operatorId", event.target.value)} aria-invalid={Boolean(errors.operatorId)}><option value="">Select an active {values.transport} operator</option>{compatibleOperators.map((operator) => <option value={operator.id} key={operator.id}>{operator.name} · {operator.status}</option>)}</select>{errors.operatorId && <small className="vehicle-error">{errors.operatorId}</small>}{!compatibleOperators.length && <small className="vehicle-error">No active {values.transport} operator is available. Add or activate one in Operator Management first.</small>}</label>
+          <label className="vehicle-field"><span>Vehicle status</span><select value={values.status} aria-invalid={Boolean(errors.status)} onChange={(event) => update("status", event.target.value)}><option value="active">Active</option><option value="inactive">Inactive</option><option value="maintenance">Maintenance</option></select>{errors.status && <small className="vehicle-error">{errors.status}</small>}</label>
+          <footer className="vehicle-form-actions"><button className="vehicle-button secondary" type="button" onClick={onClose} disabled={saving}>Cancel</button><button className="vehicle-button primary" type="submit" disabled={saving || !compatibleOperators.length}>{saving ? "Saving..." : vehicle ? "Save changes" : "Add vehicle"}</button></footer>
         </form>
       </section>
     </div>

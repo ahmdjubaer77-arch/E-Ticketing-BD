@@ -78,6 +78,7 @@ To securely provision the first administrator after MongoDB is reachable, run `n
 | GET | `/api/admin/users` | Search, filter, sort, paginate users, and return account statistics |
 | GET | `/api/admin/users/:id` | Return a user's profile; bookings are not linked to user accounts |
 | POST | `/api/admin/users` | Create a verified regular user with a bcrypt-hashed password |
+| POST | `/api/admin/users/admins` | Create an active, verified administrator with a bcrypt-hashed password; requires administrator authentication |
 | PUT | `/api/admin/users/:id` | Update a user's name, email, phone, or password |
 | PATCH | `/api/admin/users/:id/status` | Block or unblock a regular user; blocking revokes existing sessions |
 | DELETE | `/api/admin/users/:id` | Soft-deactivate a regular user and revoke sessions; records are retained |
@@ -120,9 +121,9 @@ To securely provision the first administrator after MongoDB is reachable, run `n
 | PATCH | `/api/admin/bookings/:id/tickets/:ticketCode/verify` | Verify an upcoming ticket once and mark it used |
 | GET | `/api/health` | API health check |
 
-Admin APIs reuse the existing HttpOnly JWT cookie, session-version checks, and `requireRole("admin")` middleware. Public registration always creates a regular user; this API intentionally provides no public role-escalation or administrator-provisioning endpoint. Provision administrator accounts through a trusted, access-controlled operational process.
+Admin APIs reuse the existing HttpOnly JWT cookie, session-version checks, and `requireRole("admin")` middleware. Public registration always creates a regular user and cannot set roles. A signed-in administrator can create another administrator from **User Management → Create admin** using the new admin's name, email, and password. The password is validated and bcrypt-hashed; the account is active and email-verified so it can sign in immediately to the admin panel with its email and password. Share credentials securely and ask each administrator to use a unique password. Administrator accounts cannot be blocked, unblocked, or deleted through the user-management API.
 
-Admin user list query parameters: `search`, `status=active|blocked`, `from=YYYY-MM-DD`, `to=YYYY-MM-DD`, `sort=newest|oldest`, `page`, and `limit` (maximum 100). Administrator accounts cannot be blocked, unblocked, or deleted through the user-management API. Delete is soft deactivation because the existing schema has no deletion marker. Admin-created reservations retain customer contact and journey snapshots but are not attached to a customer account, so user detail booking history remains unavailable.
+Admin user list query parameters: `search`, `status=active|blocked`, `from=YYYY-MM-DD`, `to=YYYY-MM-DD`, `sort=newest|oldest`, `page`, and `limit` (maximum 100). Delete is soft deactivation because the existing schema has no deletion marker. Admin-created reservations retain customer contact and journey snapshots but are not attached to a customer account, so user detail booking history remains unavailable.
 
 Admin operator list query parameters: `search`, `transport=Bus|Train|Launch|Event`, `status=active|inactive|pending`, `sort=newest|oldest|name_asc|name_desc`, `page`, and `limit` (maximum 100). Operator details return `relationships.available: false`; no relationship counts are fabricated. The authenticated logo endpoint accepts raw JPEG/PNG/WebP bytes up to 2 MB, stores the image under an operator-specific Cloudinary public ID, and stores the HTTPS URL and private public ID on the existing operator document. `DELETE` archives the operator rather than removing its record.
 

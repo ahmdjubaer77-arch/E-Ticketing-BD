@@ -59,8 +59,8 @@ export function validateVehicleFields(body, { creating }) {
   }
   if (creating || Object.hasOwn(body, "registrationNumber")) {
     values.registrationNumber = sanitizeText(body.registrationNumber).replace(/\s+/g, " ").toUpperCase();
-    if (values.registrationNumber.length < 2 || values.registrationNumber.length > 20 || !/^[A-Z0-9][A-Z0-9 -]*$/.test(values.registrationNumber)) {
-      errors.registrationNumber = "Enter a valid registration number using letters, numbers, spaces, or hyphens.";
+    if (values.registrationNumber.length < 2 || values.registrationNumber.length > 50) {
+      errors.registrationNumber = "Registration number must be between 2 and 50 characters.";
     }
   }
   if (creating || Object.hasOwn(body, "transport")) {

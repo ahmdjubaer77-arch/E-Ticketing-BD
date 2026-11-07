@@ -16,6 +16,27 @@ test("admin user validation normalizes valid profile fields", () => {
   assert.equal(result.values.phone, "+880 1712345678");
 });
 
+test("admin creation credentials use the validated account fields without accepting a client role", () => {
+  const credentials = validateUserFields({
+    fullName: "  Admin One ",
+    email: " ADMIN@EXAMPLE.COM ",
+    phone: "+880 1712345678",
+    password: "ValidPass123",
+  }, { creating: true });
+
+  assert.deepEqual(credentials.errors, {});
+  assert.equal(credentials.values.fullName, "Admin One");
+  assert.equal(credentials.values.email, "admin@example.com");
+
+  const clientSelectedRole = validateUserFields({
+    fullName: "Admin One",
+    email: "admin@example.com",
+    password: "ValidPass123",
+    role: "admin",
+  }, { creating: true });
+  assert.match(clientSelectedRole.errors.body, /Unsupported fields: role/);
+});
+
 test("admin user validation rejects weak passwords and privilege fields", () => {
   const weakPassword = validateUserFields({
     fullName: "Ada Lovelace",

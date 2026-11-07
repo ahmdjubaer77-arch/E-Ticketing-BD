@@ -100,24 +100,26 @@ function userFromApi(record, index = 0) {
   };
 }
 
-function UserModal({ user, users, onClose, onSave }) {
+function UserModal({ user, users, role = "user", onClose, onSave }) {
   const [values, setValues] = useState({
     name: user?.name ?? "",
     email: user?.email ?? "",
     phone: user?.phone ?? "",
     password: "",
+    confirmPassword: "",
     status: user?.status ?? "Active",
   });
   const [errors, setErrors] = useState({});
   const [submitError, setSubmitError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     function onKeyDown(event) {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape" && !submitting) onClose();
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
+  }, [onClose, submitting]);
 
   function update(field, value) {
     setValues((current) => ({ ...current, [field]: value }));
@@ -127,17 +129,23 @@ function UserModal({ user, users, onClose, onSave }) {
 
   async function submit(event) {
     event.preventDefault();
+    if (submitting) return;
     const nextErrors = {};
     if (values.name.trim().length < 2) nextErrors.name = "Enter a name with at least 2 characters.";
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values.email.trim())) nextErrors.email = "Enter a valid email address.";
     if (values.phone.trim() && !/^\+?[0-9\s()-]{7,20}$/.test(values.phone.trim())) nextErrors.phone = "Enter a valid phone number.";
     if ((!user || values.password) && (values.password.length < 8 || values.password.length > 72)) nextErrors.password = "Password must be between 8 and 72 characters.";
+    else if ((!user || values.password) && (!/[a-z]/.test(values.password) || !/[A-Z]/.test(values.password) || !/[0-9]/.test(values.password))) {
+      nextErrors.password = "Use at least one uppercase letter, one lowercase letter, and one number.";
+    }
+    if (role === "admin" && values.password !== values.confirmPassword) nextErrors.confirmPassword = "Passwords do not match.";
     if (users.some((item) => item.email.toLowerCase() === values.email.trim().toLowerCase() && item.id !== user?.id)) {
       nextErrors.email = "An account with this email already exists.";
     }
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length) return;
 
+    setSubmitting(true);
     try {
       await onSave({
         ...user,
@@ -145,6 +153,7 @@ function UserModal({ user, users, onClose, onSave }) {
         email: values.email.trim(),
         phone: values.phone.trim(),
         password: values.password,
+        role: user?.role || role,
         status: values.status,
         joinedAt: user?.joinedAt ?? daysAgo(0),
         color: user?.color ?? "mint",
@@ -155,24 +164,28 @@ function UserModal({ user, users, onClose, onSave }) {
       onClose();
     } catch (error) {
       setSubmitError(error instanceof Error ? error.message : "Unable to save this user.");
+    } finally {
+      setSubmitting(false);
     }
   }
 
   return (
-    <div className="users-modal-scrim" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+    <div className="users-modal-scrim" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !submitting) onClose(); }}>
       <section className="users-modal" role="dialog" aria-modal="true" aria-labelledby="user-form-title">
         <div className="users-modal-head">
-          <div><span className="users-eyebrow">{user ? "ACCOUNT DETAILS" : "NEW ACCOUNT"}</span><h2 id="user-form-title">{user ? "Edit user" : "Add new user"}</h2><p>{user ? "Update this user’s database account." : "Create a verified customer account."}</p></div>
-          <button className="users-icon-button" type="button" aria-label="Close dialog" onClick={onClose}><X size={19} /></button>
+          <div><span className="users-eyebrow">{user ? "ACCOUNT DETAILS" : role === "admin" ? "ADMINISTRATOR ACCESS" : "NEW ACCOUNT"}</span><h2 id="user-form-title">{user ? "Edit user" : role === "admin" ? "Create admin account" : "Add new user"}</h2><p>{user ? "Update this user’s database account." : role === "admin" ? "Create sign-in credentials for another administrator." : "Create a verified customer account."}</p></div>
+          <button className="users-icon-button" type="button" aria-label="Close dialog" disabled={submitting} onClick={onClose}><X size={19} /></button>
         </div>
         <form className="users-form" onSubmit={submit} noValidate>
           <label className="users-field"><span>Full name</span><input autoFocus value={values.name} onChange={(event) => update("name", event.target.value)} placeholder="e.g. Ayesha Rahman" aria-invalid={Boolean(errors.name)} />{errors.name && <small className="users-field-error">{errors.name}</small>}</label>
           <label className="users-field"><span>Email address</span><input type="email" autoComplete="email" value={values.email} onChange={(event) => update("email", event.target.value)} placeholder="name@example.com" aria-invalid={Boolean(errors.email)} />{errors.email && <small className="users-field-error">{errors.email}</small>}</label>
           <label className="users-field"><span>Phone number</span><input type="tel" autoComplete="tel" value={values.phone} onChange={(event) => update("phone", event.target.value)} placeholder="+880 1XXX-XXXXXX" aria-invalid={Boolean(errors.phone)} />{errors.phone && <small className="users-field-error">{errors.phone}</small>}</label>
-          {user?.role !== "admin" && <label className="users-field"><span>{user ? "New password (optional)" : "Password"}</span><input type="password" autoComplete="new-password" value={values.password} onChange={(event) => update("password", event.target.value)} placeholder={user ? "Leave blank to keep current password" : "8–72 characters"} aria-invalid={Boolean(errors.password)} />{errors.password && <small className="users-field-error">{errors.password}</small>}</label>}
+          {user?.role !== "admin" && <label className="users-field"><span>{user ? "New password (optional)" : "Password"}</span><input type="password" autoComplete="new-password" value={values.password} onChange={(event) => update("password", event.target.value)} placeholder={user ? "Leave blank to keep current password" : "8–72 characters; upper/lowercase and number"} aria-invalid={Boolean(errors.password)} />{errors.password && <small className="users-field-error">{errors.password}</small>}</label>}
+          {!user && role === "admin" && <label className="users-field"><span>Confirm password</span><input type="password" autoComplete="new-password" value={values.confirmPassword} onChange={(event) => update("confirmPassword", event.target.value)} placeholder="Enter the password again" aria-invalid={Boolean(errors.confirmPassword)} />{errors.confirmPassword && <small className="users-field-error">{errors.confirmPassword}</small>}</label>}
+          {!user && role === "admin" && <p className="users-admin-access-note"><ShieldCheck size={15} />This account will have full administrator access and can sign in as soon as it is created.</p>}
           {user?.role !== "admin" && <label className="users-field"><span>Account status</span><select value={values.status} onChange={(event) => update("status", event.target.value)}><option>Active</option><option>Blocked</option></select></label>}
           {submitError && <p className="users-submit-error" role="alert">{submitError}</p>}
-          <div className="users-form-actions"><button className="users-button secondary" type="button" onClick={onClose}>Cancel</button><button className="users-button primary" type="submit">{user ? "Save changes" : "Create user"}</button></div>
+          <div className="users-form-actions"><button className="users-button secondary" type="button" disabled={submitting} onClick={onClose}>Cancel</button><button className="users-button primary" type="submit" disabled={submitting}>{submitting ? user ? "Saving changes…" : "Creating account…" : user ? "Save changes" : role === "admin" ? "Create admin account" : "Create user"}</button></div>
         </form>
       </section>
     </div>
@@ -250,6 +263,7 @@ export default function UserManagement({ users, setUsers, query, onQueryChange, 
   const [drawerUserId, setDrawerUserId] = useState("");
   const [editingUserId, setEditingUserId] = useState(null);
   const [isAddingUser, setIsAddingUser] = useState(false);
+  const [isAddingAdmin, setIsAddingAdmin] = useState(false);
   const [confirmAction, setConfirmAction] = useState(null);
   const [debouncedQuery, setDebouncedQuery] = useState(query);
   const [statistics, setStatistics] = useState({ totalUsers: 0, activeUsers: 0, blockedUsers: 0, newThisMonth: 0 });
@@ -356,7 +370,8 @@ export default function UserManagement({ users, setUsers, query, onQueryChange, 
       phone: user.phone,
       ...(user.password ? { password: user.password } : {}),
     };
-    const result = await apiRequest(isExisting ? `/admin/users/${user.id}` : "/admin/users", {
+    const createAdmin = !isExisting && user.role === "admin";
+    const result = await apiRequest(isExisting ? `/admin/users/${user.id}` : createAdmin ? "/admin/users/admins" : "/admin/users", {
       method: isExisting ? "PUT" : "POST",
       body,
     });
@@ -386,7 +401,7 @@ export default function UserManagement({ users, setUsers, query, onQueryChange, 
     onQueryChange("");
     setPage(1);
     setReloadVersion((version) => version + 1);
-    onToast(isExisting ? "User updated" : "User created", `${savedUser.fullName}'s account was saved to the database.`);
+    onToast(isExisting ? "User updated" : createAdmin ? "Admin account created" : "User created", `${savedUser.fullName}'s account was saved to the database.`);
   }
 
   async function confirmUserAction() {
@@ -436,7 +451,7 @@ export default function UserManagement({ users, setUsers, query, onQueryChange, 
       <div className="users-demo-note"><span /> LIVE DATABASE <span>User records and account actions are loaded from MongoDB through the protected admin API.</span></div>
       <header className="users-page-heading">
         <div><span className="users-eyebrow">WORKSPACE <ArrowRight size={12} /> USERS</span><h1>User Management</h1><p>Manage and monitor all registered users.</p></div>
-        <button className="users-button primary add-user-button" type="button" onClick={() => setIsAddingUser(true)}><UserPlus size={16} />Add new user</button>
+        <div className="users-heading-actions"><button className="users-button secondary" type="button" onClick={() => setIsAddingAdmin(true)}><ShieldCheck size={16} />Create admin</button><button className="users-button primary add-user-button" type="button" onClick={() => setIsAddingUser(true)}><UserPlus size={16} />Add new user</button></div>
       </header>
 
       <section className="users-stats-grid" aria-label="User statistics">
@@ -473,6 +488,7 @@ export default function UserManagement({ users, setUsers, query, onQueryChange, 
       </section>
 
       {(isAddingUser || editingUserId) && <UserModal key={editingUserId || "new"} user={editingUser} users={users} onClose={() => { setIsAddingUser(false); setEditingUserId(null); }} onSave={saveUser} />}
+      {isAddingAdmin && <UserModal key="new-admin" users={users} role="admin" onClose={() => setIsAddingAdmin(false)} onSave={saveUser} />}
       <UserDrawer user={drawerUser} onClose={() => setDrawerUserId("")} onEdit={(user) => { setDrawerUserId(""); setEditingUserId(user.id); }} onAction={rowAction} />
       <ConfirmDialog action={confirmAction} onCancel={() => setConfirmAction(null)} onConfirm={confirmUserAction} />
     </section>

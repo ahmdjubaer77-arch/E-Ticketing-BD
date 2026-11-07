@@ -54,6 +54,32 @@
   margin-bottom: 21px;
 }
 
+.users-heading-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.users-admin-access-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin: 0;
+  padding: 9px 10px;
+  color: #42634d;
+  border: 1px solid #dcebe0;
+  border-radius: 7px;
+  background: #f2f8f3;
+  font-size: 9px;
+  line-height: 1.5;
+}
+
+.users-admin-access-note svg {
+  flex: 0 0 auto;
+  color: #087958;
+}
+
 .users-eyebrow {
   display: inline-flex;
   align-items: center;
@@ -120,6 +146,11 @@
 .users-button.secondary:hover {
   border-color: #cbd9ce;
   background: #f9fbf9;
+}
+
+.users-button:disabled {
+  cursor: wait;
+  opacity: .6;
 }
 
 .users-button.danger-button {
@@ -1238,6 +1269,12 @@
     gap: 5px;
     padding-inline: 8px;
     font-size: 9px;
+  }
+
+  .users-heading-actions {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
   }
 
   .users-page-heading .users-button svg {

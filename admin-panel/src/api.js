@@ -3,12 +3,18 @@ const apiBaseUrl = import.meta.env.PROD
   : (import.meta.env.VITE_API_BASE_URL || "").replace(/\/+$/, "");
 
 export class ApiError extends Error {
-  constructor(message, status, code) {
+  constructor(message, status, code, errors) {
     super(message);
     this.name = "ApiError";
     this.status = status;
     this.code = code;
+    this.errors = errors;
   }
+}
+
+function notifyUnauthorized(path, response) {
+  if (response.status !== 401 || !path.startsWith("/admin/")) return;
+  window.dispatchEvent(new CustomEvent("admin:unauthorized"));
 }
 
 export async function apiRequest(path, { body, method = "GET", signal } = {}) {
@@ -22,7 +28,8 @@ export async function apiRequest(path, { body, method = "GET", signal } = {}) {
   });
   const payload = await response.json().catch(() => null);
   if (!response.ok || payload?.success === false) {
-    throw new ApiError(payload?.message || "The request could not be completed.", response.status, payload?.code);
+    notifyUnauthorized(path, response);
+    throw new ApiError(payload?.message || "The request could not be completed.", response.status, payload?.code, payload?.errors);
   }
   return payload?.data;
 }
@@ -36,7 +43,8 @@ export async function uploadImage(path, file) {
   });
   const payload = await response.json().catch(() => null);
   if (!response.ok || payload?.success === false) {
-    throw new ApiError(payload?.message || "The image could not be uploaded.", response.status, payload?.code);
+    notifyUnauthorized(path, response);
+    throw new ApiError(payload?.message || "The image could not be uploaded.", response.status, payload?.code, payload?.errors);
   }
   return payload?.data;
 }

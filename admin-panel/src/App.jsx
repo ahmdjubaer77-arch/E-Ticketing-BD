@@ -427,6 +427,16 @@ function App() {
   const [toast, setToast] = useState(null);
 
   useEffect(() => {
+    function handleUnauthorized() {
+      setAdminUser(null);
+      setAuthStatus("signed-out");
+      setAuthError("Your administrator session expired. Please sign in again.");
+    }
+    window.addEventListener("admin:unauthorized", handleUnauthorized);
+    return () => window.removeEventListener("admin:unauthorized", handleUnauthorized);
+  }, []);
+
+  useEffect(() => {
     let active = true;
     apiRequest("/admin/me")
       .then(({ user }) => {
