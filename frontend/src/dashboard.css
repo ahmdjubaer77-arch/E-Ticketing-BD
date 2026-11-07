@@ -905,6 +905,46 @@
   letter-spacing: .3px;
 }
 
+.my-ticket-downloads {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 11px 14px;
+  border-top: 1px solid #edf1ed;
+  background: #f7fbf8;
+}
+
+.my-ticket-code-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.my-ticket-code-list > span {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 8px;
+  color: #68776d;
+  border: 1px solid #e1ece4;
+  border-radius: 7px;
+  background: #fff;
+  font-size: 9px;
+}
+
+.my-ticket-code-list strong {
+  color: #24553c;
+  font-family: monospace;
+  letter-spacing: .25px;
+}
+
+.my-ticket-downloads > button {
+  flex: 0 0 auto;
+  gap: 6px;
+}
+
 .my-booking-actions {
   display: flex;
   flex-wrap: wrap;
@@ -977,6 +1017,11 @@
   .dashboard-welcome p {
     max-width: 330px;
     font-size: 11px;
+  }
+
+  .my-ticket-downloads {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .dashboard-welcome-icon {

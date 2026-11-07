@@ -59,7 +59,21 @@ function VehicleTypeIcon({ type, size = 15 }) {
 }
 
 function VehicleImage({ vehicle, large = false }) {
-  if (vehicle.image) return <img className={`vehicle-image${large ? " large" : ""}`} src={vehicle.image} alt={`${vehicle.name}`} />;
+  const [imageIndex, setImageIndex] = useState(0);
+  const imageSources = [...new Set([vehicle.operatorLogo, vehicle.image].filter(Boolean))];
+  useEffect(() => setImageIndex(0), [vehicle.operatorLogo, vehicle.image]);
+  if (imageSources[imageIndex]) {
+    return (
+      <img
+        className={`vehicle-image${large ? " large" : ""} operator-logo-image`}
+        src={imageSources[imageIndex]}
+        alt={imageSources[imageIndex] === vehicle.operatorLogo
+          ? `${vehicle.operatorName || "Operator"} logo`
+          : `${vehicle.name}`}
+        onError={() => setImageIndex((current) => current + 1)}
+      />
+    );
+  }
   const Icon = vehicle.transport === "Train" ? TrainFront : vehicle.transport === "Launch" ? Ship : Bus;
   return <span className={`vehicle-image ${vehicle.color || "mint"}${large ? " large" : ""}`} aria-label={`${vehicle.transport} vehicle image placeholder`}><Icon size={large ? 30 : 19} strokeWidth={1.6} /></span>;
 }
@@ -241,7 +255,15 @@ function VehicleModal({ vehicle, vehicles, operators, onClose, onSave }) {
         <form className="vehicle-form" onSubmit={submit} noValidate>
           {formError && <p className="vehicle-error vehicle-form-error" role="alert">{formError}</p>}
           <div className="vehicle-image-field">
-            <VehicleImage vehicle={{ ...values, color: vehicle?.color || "mint" }} large />
+            <VehicleImage
+              vehicle={{
+                ...values,
+                color: vehicle?.color || "mint",
+                operatorName: operators.find((operator) => operator.id === values.operatorId)?.name,
+                operatorLogo: operators.find((operator) => operator.id === values.operatorId)?.logo,
+              }}
+              large
+            />
             <div><strong>Vehicle image</strong><small>PNG, JPG or WebP · Max 2 MB</small><label className="vehicle-upload-button"><Plus size={13} />Upload image<input type="file" accept="image/png,image/jpeg,image/webp" onChange={chooseImage} /></label>{imageError && <small className="vehicle-error">{imageError}</small>}</div>
             {values.image && <button className="vehicle-image-remove" type="button" onClick={() => { setImageFile(null); setRemoveImage(true); update("image", ""); }}>Remove</button>}
           </div>
@@ -368,6 +390,7 @@ export default function VehicleManagement({ vehicles, setVehicles, operators, se
   const visibleVehicles = useMemo(() => vehicles.map((vehicle) => ({
     ...vehicle,
     operatorName: operators.find((operator) => operator.id === vehicle.operatorId)?.name ?? vehicle.operatorName ?? "Operator unavailable",
+    operatorLogo: operators.find((operator) => operator.id === vehicle.operatorId)?.logo ?? "",
   })), [vehicles, operators]);
 
   const filteredVehicles = useMemo(() => visibleVehicles.filter((vehicle) => {

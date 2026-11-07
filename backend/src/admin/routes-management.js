@@ -1,6 +1,7 @@
 import { Router } from "express";
 import mongoose from "mongoose";
 import Route from "../models/Route.js";
+import HomepageSettings from "../models/HomepageSettings.js";
 import { sanitizeText } from "../auth/security.js";
 
 const routeFields = "departure destination distanceKm estimatedDurationMinutes transport startingFare description status createdAt updatedAt";
@@ -11,6 +12,16 @@ const statuses = new Set(["active", "inactive"]);
 
 export function isRouteObjectId(value) {
   return typeof value === "string" && /^[a-f\d]{24}$/i.test(value);
+}
+
+export function validateFeaturedRouteIds(routeIds) {
+  if (!Array.isArray(routeIds)) return { error: "Featured routes must be provided as a list.", routeIds: [] };
+  if (routeIds.length > 6) return { error: "Select no more than 6 featured routes.", routeIds: [] };
+  if (routeIds.some((id) => !isRouteObjectId(id))) return { error: "Every featured route must have a valid route ID.", routeIds: [] };
+  if (new Set(routeIds.map((id) => id.toLowerCase())).size !== routeIds.length) {
+    return { error: "A route can only be selected once.", routeIds: [] };
+  }
+  return { error: "", routeIds };
 }
 
 function escapeRegex(value) {
@@ -109,6 +120,25 @@ function duplicateRoute(response) {
 export function createAdminRoutesManagementRouter() {
   const router = Router();
 
+  router.put("/featured", async (request, response, next) => {
+    try {
+      const { error, routeIds } = validateFeaturedRouteIds(request.body?.routeIds);
+      if (error) return response.status(400).json({ success: false, message: error });
+      const settings = await HomepageSettings.findOneAndUpdate(
+        { _id: "homepage" },
+        { $set: { featuredRouteIds: routeIds } },
+        { new: true, upsert: true, runValidators: true, setDefaultsOnInsert: true },
+      );
+      return response.json({
+        success: true,
+        message: "Featured routes updated.",
+        data: { featuredRouteIds: settings.featuredRouteIds.map(String) },
+      });
+    } catch (error) {
+      return next(error);
+    }
+  });
+
   router.get("/", async (request, response, next) => {
     try {
       const page = parseBoundedInteger(request.query.page, 1, 1_000_000);
@@ -155,7 +185,7 @@ export function createAdminRoutesManagementRouter() {
       }
       if (searchConditions.length) filter.$and = searchConditions;
 
-      const [routes, total, statistics] = await Promise.all([
+      const [routes, total, statistics, homepageSettings] = await Promise.all([
         Route.find(filter)
           .select(routeFields)
           .sort(sortOptions[sort])
@@ -173,14 +203,18 @@ export function createAdminRoutesManagementRouter() {
           } },
           { $project: { _id: 0, total: 1, active: 1, inactive: 1 } },
         ]),
+        HomepageSettings.findById("homepage").select("featuredRouteIds").lean(),
       ]);
+      const featuredRouteIds = (homepageSettings?.featuredRouteIds || []).map(String);
+      const featuredRouteSet = new Set(featuredRouteIds);
       const counts = statistics[0] ?? { total: 0, active: 0, inactive: 0 };
 
       return response.json({
         success: true,
         message: "Routes retrieved.",
         data: {
-          routes: routes.map(routeResponse),
+          routes: routes.map((route) => ({ ...routeResponse(route), featured: featuredRouteSet.has(String(route._id)) })),
+          featuredRouteIds,
           statistics: { ...counts, popular: 0, popularAvailable: false },
           pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
           relatedSchedulesAvailable: false,
@@ -274,6 +308,10 @@ export function createAdminRoutesManagementRouter() {
         { new: true, runValidators: true },
       );
       if (!route) return response.status(404).json({ success: false, message: "Route not found." });
+      await HomepageSettings.updateOne(
+        { _id: "homepage" },
+        { $pull: { featuredRouteIds: route._id } },
+      );
       return response.json({
         success: true,
         message: "Route deactivated and archived; its record has been retained.",

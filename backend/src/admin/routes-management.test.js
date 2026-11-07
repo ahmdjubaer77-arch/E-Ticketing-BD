@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { isRouteObjectId, validateRouteFields } from "./routes-management.js";
+import { isRouteObjectId, validateFeaturedRouteIds, validateRouteFields } from "./routes-management.js";
 import Route from "../models/Route.js";
 
 const validRoute = {
@@ -56,6 +56,21 @@ test("route updates require supported fields and cannot change status directly",
     validateRouteFields({ status: "inactive" }, { creating: false }).errors.body,
     /Unsupported fields/,
   );
+});
+
+test("homepage route selection accepts at most six unique valid route IDs", () => {
+  const ids = [
+    "507f1f77bcf86cd799439011",
+    "507f1f77bcf86cd799439012",
+    "507f1f77bcf86cd799439013",
+    "507f1f77bcf86cd799439014",
+    "507f1f77bcf86cd799439015",
+    "507f1f77bcf86cd799439016",
+  ];
+  assert.deepEqual(validateFeaturedRouteIds(ids), { error: "", routeIds: ids });
+  assert.match(validateFeaturedRouteIds([...ids, "507f1f77bcf86cd799439017"]).error, /no more than 6/);
+  assert.match(validateFeaturedRouteIds([ids[0], ids[0]]).error, /only be selected once/);
+  assert.match(validateFeaturedRouteIds(["not-an-id"]).error, /valid route ID/);
 });
 
 test("route IDs must be MongoDB ObjectId-shaped and model enforces numeric ranges", async () => {

@@ -58,7 +58,7 @@ function BookingTransportIcon({ transport }) {
   return <Bus size={17} />;
 }
 
-function MyBookings({ onBrowseTrips }) {
+function MyBookings({ onBrowseTrips, ticketsOnly = false }) {
   const [bookings, setBookings] = useState([]);
   const [pagination, setPagination] = useState({ page: 1, pages: 1, total: 0 });
   const [page, setPage] = useState(1);
@@ -101,7 +101,8 @@ function MyBookings({ onBrowseTrips }) {
       setLoading(true);
       setError("");
       const params = new URLSearchParams({ page: String(page), limit: "10" });
-      if (status) params.set("status", status);
+      if (ticketsOnly) params.set("status", "tickets");
+      else if (status) params.set("status", status);
       if (search.trim()) params.set("search", search.trim());
       apiRequest(`/users/bookings?${params}`, { signal: controller.signal })
         .then((result) => {
@@ -131,7 +132,7 @@ function MyBookings({ onBrowseTrips }) {
   }, [search, status]);
 
   function downloadTicket(booking) {
-    if (booking.status !== "confirmed" || booking.paymentStatus !== "paid") return;
+    if (!["confirmed", "completed"].includes(booking.status) || booking.paymentStatus !== "paid") return;
     const contents = [
       "E-TICKETING — CONFIRMED E-TICKET",
       `Booking reference: ${booking.reference}`,
@@ -161,21 +162,21 @@ function MyBookings({ onBrowseTrips }) {
   }
 
   return (
-    <div className="my-bookings">
+    <div className={`my-bookings${ticketsOnly ? " tickets-only" : ""}`}>
       <div className="my-bookings-toolbar">
-        <label className="my-bookings-search"><Search size={16} /><input type="search" value={search} maxLength={100} placeholder="Search reference, route, seat or transaction ID" aria-label="Search my bookings" onChange={(event) => { setPage(1); setSearch(event.target.value); }} />{search && <button type="button" aria-label="Clear booking search" onClick={() => { setPage(1); setSearch(""); }}>×</button>}</label>
-        <label className="my-bookings-status"><span>Booking status</span><select value={status} aria-label="Filter bookings by status" onChange={(event) => { setPage(1); setStatus(event.target.value); }}><option value="">All bookings</option><option value="pending">Pending</option><option value="confirmed">Confirmed</option><option value="completed">Completed</option><option value="cancelled">Cancelled</option><option value="expired">Expired</option></select></label>
+        <label className="my-bookings-search"><Search size={16} /><input type="search" value={search} maxLength={100} placeholder={ticketsOnly ? "Search ticket, route, seat or reference" : "Search reference, route, seat or transaction ID"} aria-label={ticketsOnly ? "Search my tickets" : "Search my bookings"} onChange={(event) => { setPage(1); setSearch(event.target.value); }} />{search && <button type="button" aria-label="Clear booking search" onClick={() => { setPage(1); setSearch(""); }}>×</button>}</label>
+        {!ticketsOnly && <label className="my-bookings-status"><span>Booking status</span><select value={status} aria-label="Filter bookings by status" onChange={(event) => { setPage(1); setStatus(event.target.value); }}><option value="">All bookings</option><option value="pending">Pending</option><option value="confirmed">Confirmed</option><option value="completed">Completed</option><option value="cancelled">Cancelled</option><option value="expired">Expired</option></select></label>}
         <button className="dashboard-secondary-button my-bookings-refresh" type="button" disabled={loading} onClick={() => setRefreshKey((key) => key + 1)}><RefreshCw size={15} />{loading ? "Refreshing…" : "Refresh"}</button>
       </div>
 
       {error && <div className="my-bookings-error" role="alert"><TriangleAlert size={17} /><span>{error}</span><button type="button" onClick={() => setRefreshKey((key) => key + 1)}>Try again</button></div>}
 
-      {loading && bookings.length === 0 && !error && <div className="my-bookings-message" role="status">Loading your bookings…</div>}
+      {loading && bookings.length === 0 && !error && <div className="my-bookings-message" role="status">{ticketsOnly ? "Loading your tickets…" : "Loading your bookings…"}</div>}
       {!loading && !error && bookings.length === 0 && (
         <div className="my-bookings-empty">
           <span><CalendarCheck size={25} /></span>
-          <h3>{search || status ? "No matching bookings" : "No bookings yet"}</h3>
-          <p>{search || status ? "Try a different search or status filter." : "Your reservations and tickets will appear here after you book."}</p>
+          <h3>{ticketsOnly ? (search ? "No matching tickets" : "No tickets available yet") : search || status ? "No matching bookings" : "No bookings yet"}</h3>
+          <p>{ticketsOnly ? (search ? "Try another search term." : "Tickets appear here after payment is confirmed for a booking.") : search || status ? "Try a different search or status filter." : "Your reservations and tickets will appear here after you book."}</p>
           {!search && !status && <button className="dashboard-primary-button" type="button" onClick={onBrowseTrips}>Browse trips <ArrowRight size={15} /></button>}
         </div>
       )}
@@ -187,16 +188,30 @@ function MyBookings({ onBrowseTrips }) {
           const isPaid = booking.paymentStatus === "paid" && ["confirmed", "completed"].includes(booking.status);
           return (
             <article className="my-booking-card" key={booking.id}>
-              <button className="my-booking-summary" type="button" aria-expanded={expanded} onClick={() => setExpandedId(expanded ? "" : booking.id)}>
+              <button className={`my-booking-summary${ticketsOnly ? " my-ticket-summary" : ""}`} type="button" aria-expanded={expanded} onClick={() => setExpandedId(expanded ? "" : booking.id)}>
                 <span className="my-booking-icon"><BookingTransportIcon transport={booking.transport} /></span>
                 <span className="my-booking-primary">
                   <strong>{booking.departure} <ArrowRight size={14} /> {booking.destination}</strong>
                   <small>{booking.transport} · {booking.operatorName} · {formatBookingDate(booking.departureAt, { day: "2-digit", month: "short", year: "numeric" })}</small>
                 </span>
-                <span className={`my-booking-status ${booking.status}`}><i />{bookingStatusLabels[booking.status] || booking.status}</span>
-                <span className="my-booking-total">{formatBookingMoney(booking.totalAmount)}</span>
-                <span className="my-booking-expand">{expanded ? "Hide details" : "Details"}</span>
+                <span className="my-ticket-summary-meta">
+                  <span className={`my-booking-status ${booking.status}`}><i />{bookingStatusLabels[booking.status] || booking.status}</span>
+                  <span className="my-booking-total">{formatBookingMoney(booking.totalAmount)}</span>
+                  <span className="my-booking-expand">{expanded ? "Hide details" : "Details"}</span>
+                </span>
               </button>
+              {ticketsOnly && (
+                <div className="my-ticket-downloads">
+                  <div className="my-ticket-code-list" aria-label="Ticket codes">
+                    {booking.ticketCodes.map((code, index) => (
+                      <span key={code}><small>SEAT {booking.seatNumbers[index]}</small><strong>{code}</strong></span>
+                    ))}
+                  </div>
+                  <button className="dashboard-primary-button" type="button" onClick={() => downloadTicket(booking)}>
+                    <Download size={15} /> Download e-ticket
+                  </button>
+                </div>
+              )}
               {expanded && (
                 <div className="my-booking-details">
                   <div className="my-booking-detail-grid">
@@ -490,7 +505,7 @@ export default function UserDashboard({ user, initialSection = "profile", onUser
               onClick={() => {
                 setSection(id);
                 const url = new URL(window.location.href);
-                if (id === "bookings") url.searchParams.set("section", "bookings");
+                if (id !== "profile") url.searchParams.set("section", id);
                 else url.searchParams.delete("section");
                 window.history.pushState({}, "", `${url.pathname}${url.search}`);
               }}
@@ -621,12 +636,13 @@ export default function UserDashboard({ user, initialSection = "profile", onUser
           )}
 
           {section === "bookings" && <MyBookings onBrowseTrips={onBrowseTrips} />}
+          {section === "tickets" && <MyBookings onBrowseTrips={onBrowseTrips} ticketsOnly />}
 
-          {["tickets", "history"].includes(section) && (
+          {section === "history" && (
             <div className="dashboard-empty-state dashboard-integration-state">
               <span><ActiveIcon size={23} /></span>
-              <h3>{section === "tickets" ? "Your tickets are in My bookings" : "Booking history"} </h3>
-              <p>{section === "tickets" ? "Open a confirmed booking in My bookings to view and download its ticket codes." : "Your past and current reservations are available in My bookings."}</p>
+              <h3>Booking history</h3>
+              <p>Your past and current reservations are available in My bookings.</p>
               <button className="dashboard-secondary-button" type="button" onClick={() => setSection("bookings")}>Open My bookings</button>
             </div>
           )}

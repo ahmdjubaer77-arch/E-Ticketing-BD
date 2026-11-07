@@ -97,11 +97,15 @@ To securely provision the first administrator after MongoDB is reachable, run `n
 | PATCH | `/api/admin/vehicles/:id/status` | Set vehicle status to active, inactive, or maintenance |
 | DELETE | `/api/admin/vehicles/:id` | Soft-deactivate and archive a vehicle; retain its record |
 | GET | `/api/admin/routes` | Search, filter, sort, paginate routes, and return status statistics |
+| PUT | `/api/admin/routes/featured` | Select up to 6 routes for the customer homepage |
 | GET | `/api/admin/routes/:id` | Return route details and explicitly indicate unavailable schedules |
 | POST | `/api/admin/routes` | Create a route with duplicate route validation |
 | PUT | `/api/admin/routes/:id` | Update route details |
 | PATCH | `/api/admin/routes/:id/status` | Activate or deactivate a route |
 | DELETE | `/api/admin/routes/:id` | Soft-deactivate and archive a route; retain its record |
+| GET | `/api/admin/destinations` | List administrator-added destinations |
+| POST | `/api/admin/destinations` | Add a destination to the customer and route-management location selectors |
+| POST/DELETE | `/api/admin/destinations/cover?name=:name` | Upload or remove a destination cover image used by all customer cards for that destination |
 | GET | `/api/admin/schedules` | Search, filter by date/transport/status, sort, paginate, and return schedule statistics |
 | GET | `/api/admin/schedules/:id` | Return schedule with populated operator, vehicle, and route details |
 | POST | `/api/admin/schedules` | Create schedule with reference, seat-capacity, chronology, and vehicle-overlap validation |

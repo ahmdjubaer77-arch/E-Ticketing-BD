@@ -9,6 +9,7 @@ import { createAdminSchedulesRouter } from "./schedules.js";
 import { createAdminUsersRouter } from "./users.js";
 import { createAdminVehiclesRouter } from "./vehicles.js";
 import { createAdminPaymentMethodsRouter } from "./payment-methods.js";
+import { createAdminDestinationsRouter } from "./destinations.js";
 
 export function createAdminRouter(config) {
   const router = Router();
@@ -36,6 +37,7 @@ export function createAdminRouter(config) {
   router.use("/routes", createAdminRoutesManagementRouter());
   router.use("/schedules", createAdminSchedulesRouter());
   router.use("/vehicles", createAdminVehiclesRouter(config));
+  router.use("/destinations", createAdminDestinationsRouter(config));
 
   return router;
 }

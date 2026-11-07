@@ -38,6 +38,8 @@
 .route-table-heading h2 { display: flex; align-items: center; gap: 7px; margin: 0; color: #26342c; font-size: 13px; font-weight: 750; letter-spacing: -.2px; }
 .route-table-heading h2 > span { display: inline-grid; min-width: 20px; height: 18px; padding: 0 5px; place-items: center; color: #68756c; border-radius: 5px; background: #f0f3f0; font-size: 8px; font-weight: 700; }
 .route-table-heading p { margin: 5px 0 0; color: #87918b; font-size: 9px; }
+.route-table-heading p.route-featured-counter { color: #087857; }
+.route-featured-counter strong { font-weight: 750; }
 .route-search-caption { display: flex; align-items: center; gap: 6px; color: #87918b; font-size: 9px; }
 .route-search-caption svg { flex: 0 0 auto; }
 .route-filters { display: flex; min-width: 0; align-items: center; gap: 8px; padding: 10px 17px; border-top: 1px solid #edf0ed; border-bottom: 1px solid #edf0ed; background: #fcfdfc; }
@@ -60,6 +62,8 @@
 .route-table td { height: 58px; padding: 5px 10px; color: #536057; border-bottom: 1px solid #f0f2f0; font-size: 9px; white-space: nowrap; }
 .route-table tbody tr:last-child td { border-bottom: 0; }
 .route-table tbody tr:hover { background: #fcfdfc; }
+.route-featured-checkbox { width: 15px; height: 15px; accent-color: #047857; cursor: pointer; }
+.route-featured-checkbox:disabled { cursor: not-allowed; opacity: .45; }
 .route-id-link { padding: 0; color: #087958; border: 0; background: transparent; cursor: pointer; font-size: 9px; font-weight: 750; }
 .route-id-link:hover { text-decoration: underline; }
 .route-location { display: inline-flex; align-items: center; gap: 6px; color: #38463e; font-weight: 600; }
@@ -108,6 +112,10 @@
 .route-field textarea { min-height: 68px; resize: vertical; line-height: 1.45; }
 .route-field input:focus,.route-field select:focus,.route-field textarea:focus { border-color: #92c1a4; box-shadow: 0 0 0 3px rgba(4,120,87,.07); }
 .route-field input[aria-invalid="true"],.route-field select[aria-invalid="true"] { border-color: #cf756b; }
+.route-duration-inputs { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; }
+.route-duration-inputs > label { position: relative; display: block; min-width: 0; }
+.route-duration-inputs input { padding-right: 48px; }
+.route-duration-inputs > label > span { position: absolute; top: 50%; right: 9px; color: #87918b; font-size: 8px; font-weight: 500; transform: translateY(-50%); pointer-events: none; }
 .route-form-row { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; }
 .route-error { color: #b7463c; font-size: 8px; font-weight: 500; }
 .route-form-error { margin: 0; padding: 8px 9px; color: #984b3c; border: 1px solid #f0d7d1; border-radius: 7px; background: #fff7f5; font-size: 9px; line-height: 1.45; }

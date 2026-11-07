@@ -109,6 +109,7 @@
 .vehicle-name-cell > strong { overflow: hidden; font-size: 9px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
 .vehicle-image { display: grid; width: 34px; height: 34px; flex: 0 0 auto; overflow: hidden; place-items: center; color: #3f614e; border: 1px solid rgba(31,83,54,.05); border-radius: 9px; background: #e5efe8; }
 .vehicle-image img, img.vehicle-image { object-fit: cover; }
+img.vehicle-image.operator-logo-image { padding: 3px; object-fit: contain; background: #fff; }
 .vehicle-image.blue { color: #4a6684; background: #e5edf5; }
 .vehicle-image.gold { color: #82703f; background: #f3efdf; }
 .vehicle-image.rose { color: #875b61; background: #f5e8e9; }

@@ -11,6 +11,7 @@ import {
   CircleAlert,
   ChevronDown,
   ChevronRight,
+  Clock3,
   CircleHelp,
   Headphones,
   Home,
@@ -50,12 +51,20 @@ const heroImages = [
 
 const routeImages = [
   {
-    image: "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=280&q=80",
-    alt: "Scenic view of a river and green landscape",
+    image: "https://images.unsplash.com/photo-1501785888041-af3ef285b470?auto=format&fit=crop&w=1000&q=85",
+    alt: "Scenic green hills and lake",
   },
   {
-    image: "https://images.unsplash.com/photo-1472396961693-142e6e269027?auto=format&fit=crop&w=280&q=80",
-    alt: "Green hills and countryside",
+    image: "https://images.unsplash.com/photo-1500375592092-40eb2168fd21?auto=format&fit=crop&w=1000&q=85",
+    alt: "Blue ocean waves along the coast",
+  },
+  {
+    image: "https://images.unsplash.com/photo-1518837695005-2083093ee35b?auto=format&fit=crop&w=1000&q=85",
+    alt: "River and open water",
+  },
+  {
+    image: "https://images.unsplash.com/photo-1511497584788-876760111969?auto=format&fit=crop&w=1000&q=85",
+    alt: "Sunlight across a green forest",
   },
 ];
 
@@ -65,6 +74,13 @@ const navigation = [
   { name: "Bookings", Icon: CalendarCheck },
   { name: "Support", Icon: Headphones },
 ];
+
+function dashboardSectionFromSearch(search) {
+  const section = new URLSearchParams(search).get("section");
+  return ["profile", "bookings", "tickets", "history", "notifications", "settings"].includes(section)
+    ? section
+    : "profile";
+}
 
 function Brand({ onHome }) {
   return (
@@ -77,7 +93,7 @@ function Brand({ onHome }) {
   );
 }
 
-function Header({ noticeOpen, setNoticeOpen, notificationDrawerOpen, onHome, onAuth, onBookings, user, onDashboard, onNotifications, unreadCount = 0 }) {
+function Header({ noticeOpen, setNoticeOpen, notificationDrawerOpen, onHome, onAuth, onTickets, onBookings, user, onDashboard, onNotifications, unreadCount = 0 }) {
   return (
     <header className="site-header">
       <Brand onHome={onHome} />
@@ -85,8 +101,8 @@ function Header({ noticeOpen, setNoticeOpen, notificationDrawerOpen, onHome, onA
         <a className="desktop-nav-link active" href="#home" onClick={onHome}>
           Home
         </a>
-        <a className="desktop-nav-link" href="#booking">
-          Tickets <ChevronDown size={15} />
+        <a className="desktop-nav-link" href={user ? "/dashboard?section=tickets" : "/login"} onClick={(event) => { event.preventDefault(); onTickets(); }}>
+          My Tickets
         </a>
         <a className="desktop-nav-link" href={user ? "/dashboard?section=bookings" : "/login"} onClick={(event) => { event.preventDefault(); onBookings(); }}>
           My Bookings
@@ -183,9 +199,8 @@ function routeFromLocation() {
 
 function routePath(page, mode = "login") {
   if (page === "dashboard") {
-    return new URLSearchParams(window.location.search).get("section") === "bookings"
-      ? "/dashboard?section=bookings"
-      : "/dashboard";
+    const section = dashboardSectionFromSearch(window.location.search);
+    return section && section !== "profile" ? `/dashboard?section=${encodeURIComponent(section)}` : "/dashboard";
   }
   if (page === "auth") return mode === "register" ? "/signup" : "/login";
   return "/";
@@ -429,8 +444,8 @@ function PopularRoutes({ routes, loading, error, onRetry, onSelectRoute }) {
     <section className="popular-section" id="routes">
       <div className="section-heading">
         <div>
-          <p className="eyebrow">LIVE FROM OUR DATABASE</p>
-          <h2>Available Routes</h2>
+          <p className="eyebrow">HANDPICKED JOURNEYS</p>
+          <h2>Featured Routes</h2>
         </div>
         <a className="view-all" href="#booking">
           Search <ArrowRight size={17} />
@@ -445,7 +460,7 @@ function PopularRoutes({ routes, loading, error, onRetry, onSelectRoute }) {
         <div className="home-data-message" role="status">Loading routes from the database…</div>
       ) : routes.length ? (
         <div className="route-list">
-        {routes.map((route, index) => (
+        {routes.slice(0, 6).map((route, index) => (
           <button
             className="route-card"
             type="button"
@@ -453,24 +468,33 @@ function PopularRoutes({ routes, loading, error, onRetry, onSelectRoute }) {
             onClick={() => onSelectRoute(route)}
             aria-label={`Search ${route.transport} routes from ${route.departure} to ${route.destination}, starting at ৳${route.startingFare}`}
           >
-            <img className="route-image" src={routeImages[index % routeImages.length].image} alt={routeImages[index % routeImages.length].alt} loading="lazy" />
-            <span className="route-copy">
+            <img
+              className="route-image"
+              src={route.image || routeImages[index % routeImages.length].image}
+              alt={route.image ? `${route.destination} destination cover` : routeImages[index % routeImages.length].alt}
+              loading="lazy"
+            />
+            <span className="route-card-shade" aria-hidden="true" />
+            <span className="route-card-content">
+              <span className="route-card-feature-label"><MapPin size={12} /> FEATURED JOURNEY</span>
               <span className="route-title">
-                {route.departure} <ArrowRight size={16} /> {route.destination}
+                <span>{route.departure}</span>
+                <ArrowRight size={17} />
+                <span>{route.destination}</span>
               </span>
-              <span className="route-price">
-                {route.transport === "Train" ? <Train size={17} /> : route.transport === "Launch" ? <Ship size={17} /> : <Bus size={17} />}
-                <span>
-                  {route.transport} · From <strong>৳ {Number(route.startingFare).toLocaleString("en-BD")}</strong>
-                </span>
+              <span className="route-card-meta">
+                <span>{route.transport === "Train" ? <Train size={15} /> : route.transport === "Launch" ? <Ship size={15} /> : <Bus size={15} />}{route.transport}</span>
+                {route.estimatedDurationMinutes > 0 && <span><Clock3 size={14} />{Math.floor(route.estimatedDurationMinutes / 60)}h {String(route.estimatedDurationMinutes % 60).padStart(2, "0")}m</span>}
+                {route.distanceKm > 0 && <span>{Number(route.distanceKm).toLocaleString("en-BD")} km</span>}
+                <strong>From ৳{Number(route.startingFare).toLocaleString("en-BD")}</strong>
               </span>
             </span>
-            <ChevronRight className="route-chevron" size={21} />
+            <span className="route-card-arrow" aria-hidden="true"><ArrowRight size={17} /></span>
           </button>
         ))}
         </div>
       ) : (
-        <div className="home-data-message" role="status">No active routes are available yet.</div>
+        <div className="home-data-message" role="status">No featured routes selected yet.</div>
       )}
     </section>
   );
@@ -501,7 +525,7 @@ function Benefits() {
   );
 }
 
-function BottomNavigation({ active, setActive, onHome, onBookings }) {
+function BottomNavigation({ active, setActive, onHome, onTickets, onBookings }) {
   return (
     <nav className="bottom-nav" aria-label="Quick navigation">
       {navigation.map(({ name, Icon }) => (
@@ -513,6 +537,7 @@ function BottomNavigation({ active, setActive, onHome, onBookings }) {
           onClick={() => {
             setActive(name);
             if (name === "Home") onHome();
+            if (name === "My Tickets") onTickets();
             if (name === "Bookings") onBookings();
           }}
         >
@@ -539,7 +564,7 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState(null);
   const [user, setUser] = useState(null);
   const [unreadCount, setUnreadCount] = useState(0);
-  const [dashboardSection, setDashboardSection] = useState(() => new URLSearchParams(window.location.search).get("section") === "bookings" ? "bookings" : "profile");
+  const [dashboardSection, setDashboardSection] = useState(() => dashboardSectionFromSearch(window.location.search));
   const [authChecked, setAuthChecked] = useState(false);
   const [toast, setToast] = useState(null);
   const [homeContent, setHomeContent] = useState({ routes: [], destinations: [], locations: [], deals: [] });
@@ -549,7 +574,7 @@ export default function App() {
   const [heroSlide, setHeroSlide] = useState(0);
   const [returnPath, setReturnPath] = useState(() => (
     window.location.pathname === "/dashboard"
-      ? window.location.search.includes("section=bookings") ? "/dashboard?section=bookings" : "/dashboard"
+      ? dashboardSectionFromSearch(window.location.search) !== "profile" ? `/dashboard?section=${dashboardSectionFromSearch(window.location.search)}` : "/dashboard"
       : null
   ));
   const authRequestVersion = useRef(0);
@@ -608,7 +633,7 @@ export default function App() {
         if (requestVersion !== authRequestVersion.current) return;
         setUser(null);
         if (routeFromLocation() === "dashboard") {
-          setReturnPath(new URLSearchParams(window.location.search).get("section") === "bookings" ? "/dashboard?section=bookings" : "/dashboard");
+          setReturnPath(dashboardSectionFromSearch(window.location.search) !== "profile" ? `/dashboard?section=${dashboardSectionFromSearch(window.location.search)}` : "/dashboard");
           setAuthMode("login");
           setPage("auth");
           window.history.replaceState({}, "", "/login?returnTo=%2Fdashboard");
@@ -627,7 +652,7 @@ export default function App() {
     function handlePopState() {
       const requestedPage = routeFromLocation();
       if (requestedPage === "dashboard" && authChecked && !user) {
-        setReturnPath(new URLSearchParams(window.location.search).get("section") === "bookings" ? "/dashboard?section=bookings" : "/dashboard");
+        setReturnPath(dashboardSectionFromSearch(window.location.search) !== "profile" ? `/dashboard?section=${dashboardSectionFromSearch(window.location.search)}` : "/dashboard");
         setAuthMode("login");
         setPage("auth");
         window.history.replaceState({}, "", "/login?returnTo=%2Fdashboard");
@@ -635,7 +660,7 @@ export default function App() {
       }
       setPage(requestedPage);
       if (requestedPage === "dashboard") {
-        setDashboardSection(new URLSearchParams(window.location.search).get("section") === "bookings" ? "bookings" : "profile");
+        setDashboardSection(dashboardSectionFromSearch(window.location.search));
       }
       if (window.location.pathname === "/signup") setAuthMode("register");
       else if (window.location.pathname === "/login") setAuthMode("login");
@@ -705,6 +730,18 @@ export default function App() {
     navigate("auth", "login");
   }
 
+  function openMyTickets() {
+    setActiveNavigation("My Tickets");
+    setDashboardSection("tickets");
+    if (user) {
+      window.history.pushState({}, "", "/dashboard?section=tickets");
+      setPage("dashboard");
+      return;
+    }
+    setReturnPath("/dashboard?section=tickets");
+    navigate("auth", "login");
+  }
+
   function goHome() {
     navigate("home");
   }
@@ -735,9 +772,10 @@ export default function App() {
           description: `Welcome, ${nextUser.fullName}.`,
         });
     setReturnPath(null);
-    if (returnPath === "/dashboard?section=bookings") {
-      setDashboardSection("bookings");
-      window.history.pushState({}, "", "/dashboard?section=bookings");
+    if (returnPath?.startsWith("/dashboard?section=")) {
+      const section = dashboardSectionFromSearch(`?${returnPath.split("?")[1]}`);
+      setDashboardSection(section);
+      window.history.pushState({}, "", returnPath);
       setPage("dashboard");
     } else {
       navigate(returnPath === "/dashboard" || method !== "login" ? "dashboard" : "home");
@@ -857,6 +895,7 @@ export default function App() {
             setNoticeOpen={setNoticeOpen}
             notificationDrawerOpen={notificationDrawerOpen}
             onHome={goHome}
+            onTickets={openMyTickets}
             onBookings={openMyBookings}
             onAuth={openAuth}
             user={user}
@@ -896,6 +935,7 @@ export default function App() {
             setNoticeOpen={setNoticeOpen}
             notificationDrawerOpen={notificationDrawerOpen}
             onHome={goHome}
+            onTickets={openMyTickets}
             onBookings={openMyBookings}
             onAuth={openAuth}
             user={user}
@@ -994,6 +1034,7 @@ export default function App() {
             active={activeNavigation}
             setActive={setActiveNavigation}
             onHome={goHome}
+            onTickets={openMyTickets}
             onBookings={openMyBookings}
           />
           <footer className="desktop-footer" id="support">

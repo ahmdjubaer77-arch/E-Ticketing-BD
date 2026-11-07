@@ -66,6 +66,8 @@ export default function DestinationShowcase({ destinations, loading, error, onSe
   const cards = destinations.map((destination, index) => ({
     ...destination,
     ...destinationImages[index % destinationImages.length],
+    image: destination.image || destinationImages[index % destinationImages.length].image,
+    imageAlt: destination.image ? `${destination.name} destination cover` : destinationImages[index % destinationImages.length].imageAlt,
     size: index < 4 ? "small" : "large",
   }));
   const compactDestinations = cards.filter(({ size }) => size === "small");

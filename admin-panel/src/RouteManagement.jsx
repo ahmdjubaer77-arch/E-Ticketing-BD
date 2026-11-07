@@ -93,12 +93,14 @@ function RouteStatus({ status }) {
   return <span className={`route-status ${status}`}><i />{status === "active" ? "Active" : "Inactive"}</span>;
 }
 
-function RouteModal({ route, routes, onClose, onSave }) {
+function RouteModal({ route, routes, extraLocations = [], onClose, onSave }) {
+  const initialDuration = route?.durationMinutes ?? 0;
   const [values, setValues] = useState({
     departure: route?.departure ?? "",
     destination: route?.destination ?? "",
     distance: route?.distance ?? "",
-    durationMinutes: route?.durationMinutes ?? "",
+    durationHours: route ? String(Math.floor(initialDuration / 60)) : "",
+    durationRemainder: route ? String(initialDuration % 60) : "",
     transport: route?.transport ?? "Bus",
     fare: route?.fare ?? "",
     description: route?.description ?? "",
@@ -107,7 +109,7 @@ function RouteModal({ route, routes, onClose, onSave }) {
   const [errors, setErrors] = useState({});
   const [formError, setFormError] = useState("");
   const [saving, setSaving] = useState(false);
-  const locations = useMemo(() => [...new Set([...BANGLADESH_DISTRICTS, ...routes.flatMap((item) => [item.departure, item.destination]), route?.departure, route?.destination].filter(Boolean))].sort((a, b) => a.localeCompare(b)), [routes, route]);
+  const locations = useMemo(() => [...new Set([...BANGLADESH_DISTRICTS, ...extraLocations, ...routes.flatMap((item) => [item.departure, item.destination]), route?.departure, route?.destination].filter(Boolean))].sort((a, b) => a.localeCompare(b)), [extraLocations, routes, route]);
 
   useEffect(() => {
     function onKeyDown(event) {
@@ -119,7 +121,8 @@ function RouteModal({ route, routes, onClose, onSave }) {
 
   function update(field, value) {
     setValues((current) => ({ ...current, [field]: value }));
-    setErrors((current) => ({ ...current, [field]: "" }));
+    const errorField = field === "durationHours" || field === "durationRemainder" ? "durationMinutes" : field;
+    setErrors((current) => ({ ...current, [errorField]: "" }));
   }
 
   async function submit(event) {
@@ -134,8 +137,14 @@ function RouteModal({ route, routes, onClose, onSave }) {
     }
     const distance = Number(values.distance);
     if (!Number.isFinite(distance) || distance < 0.1 || distance > 50000) nextErrors.distance = "Enter a distance between 0.1 and 50,000 km.";
-    const durationMinutes = Number(values.durationMinutes);
-    if (!Number.isInteger(durationMinutes) || durationMinutes < 1 || durationMinutes > 10080) nextErrors.durationMinutes = "Enter a duration from 1 to 10,080 minutes.";
+    const durationHours = values.durationHours === "" ? 0 : Number(values.durationHours);
+    const durationRemainder = values.durationRemainder === "" ? 0 : Number(values.durationRemainder);
+    const durationMinutes = durationHours * 60 + durationRemainder;
+    if (!Number.isInteger(durationHours) || durationHours < 0
+      || !Number.isInteger(durationRemainder) || durationRemainder < 0 || durationRemainder > 59
+      || durationMinutes < 1 || durationMinutes > 10080) {
+      nextErrors.durationMinutes = "Enter a duration between 1 minute and 168 hours (minutes must be 0–59).";
+    }
     const fare = Number(values.fare);
     if (!Number.isFinite(fare) || fare < 0 || fare > 100000000) nextErrors.fare = "Enter a fare from ৳0 to ৳100,000,000.";
     if (routes.some((item) => item.departure.toLowerCase() === departure.toLowerCase()
@@ -182,7 +191,7 @@ function RouteModal({ route, routes, onClose, onSave }) {
           </div>
           <div className="route-form-row">
             <label className="route-field"><span>Distance (km)</span><input type="number" min="0.1" max="50000" step="0.1" value={values.distance} onChange={(event) => update("distance", event.target.value)} placeholder="e.g. 265" aria-invalid={Boolean(errors.distance)} />{errors.distance && <small className="route-error">{errors.distance}</small>}</label>
-            <label className="route-field"><span>Estimated duration (minutes)</span><input type="number" min="1" max="10080" step="1" value={values.durationMinutes} onChange={(event) => update("durationMinutes", event.target.value)} placeholder="e.g. 330" aria-invalid={Boolean(errors.durationMinutes)} />{errors.durationMinutes && <small className="route-error">{errors.durationMinutes}</small>}</label>
+            <div className="route-field"><span>Estimated duration</span><div className="route-duration-inputs"><label><input type="number" min="0" max="168" step="1" value={values.durationHours} onChange={(event) => update("durationHours", event.target.value)} placeholder="0" aria-label="Duration hours" aria-invalid={Boolean(errors.durationMinutes)} /><span>Hours</span></label><label><input type="number" min="0" max="59" step="1" value={values.durationRemainder} onChange={(event) => update("durationRemainder", event.target.value)} placeholder="0" aria-label="Duration minutes" aria-invalid={Boolean(errors.durationMinutes)} /><span>Minutes</span></label></div>{errors.durationMinutes && <small className="route-error">{errors.durationMinutes}</small>}</div>
           </div>
           <div className="route-form-row">
             <label className="route-field"><span>Transport type</span><select value={values.transport} onChange={(event) => update("transport", event.target.value)}><option>Bus</option><option>Train</option><option>Launch</option><option>Event</option></select></label>
@@ -281,8 +290,23 @@ export default function RouteManagement({ query, onQueryChange, onToast }) {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [actionError, setActionError] = useState("");
   const [actionBusy, setActionBusy] = useState(false);
+  const [adminDestinations, setAdminDestinations] = useState([]);
+  const [featuredRouteIds, setFeaturedRouteIds] = useState([]);
+  const [savingFeatured, setSavingFeatured] = useState(false);
 
-  const locations = useMemo(() => [...new Set([...BANGLADESH_DISTRICTS, ...routes.flatMap((route) => [route.departure, route.destination])])].sort((a, b) => a.localeCompare(b)), [routes]);
+  const locations = useMemo(() => [...new Set([...BANGLADESH_DISTRICTS, ...adminDestinations.map(({ name }) => name), ...routes.flatMap((route) => [route.departure, route.destination])])].sort((a, b) => a.localeCompare(b)), [adminDestinations, routes]);
+
+  useEffect(() => {
+    let active = true;
+    apiRequest("/admin/destinations")
+      .then(({ destinations: records = [] }) => {
+        if (active) setAdminDestinations(records);
+      })
+      .catch((requestError) => {
+        if (active) onToast("Could not load added destinations", requestError.message);
+      });
+    return () => { active = false; };
+  }, []);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedQuery(query.trim()), 250);
@@ -306,6 +330,7 @@ export default function RouteManagement({ query, onQueryChange, onToast }) {
       .then((data) => {
         if (controller.signal.aborted) return;
         setRoutes(data.routes.map(routeFromApi));
+        setFeaturedRouteIds(data.featuredRouteIds || []);
         setStatistics(data.statistics);
         setPagination(data.pagination);
         setPage((current) => Math.max(1, Math.min(current, data.pagination.totalPages || 1)));
@@ -345,6 +370,41 @@ export default function RouteManagement({ query, onQueryChange, onToast }) {
     const savedRoute = routeFromApi(result.route);
     onToast(isUpdate ? "Route updated" : "Route created", `${savedRoute.departure} → ${savedRoute.destination} was saved to the database.`);
     setRefreshKey((key) => key + 1);
+  }
+
+  async function toggleFeaturedRoute(route) {
+    const isFeatured = featuredRouteIds.includes(route.id);
+    if (!isFeatured && featuredRouteIds.length >= 6) {
+      onToast("Feature limit reached", "Remove a featured route before selecting another. You can feature up to 6 routes.");
+      return;
+    }
+    if (!isFeatured && route.status !== "active") {
+      onToast("Route unavailable", "Only active routes can be featured on the customer homepage.");
+      return;
+    }
+    const nextRouteIds = isFeatured
+      ? featuredRouteIds.filter((id) => id !== route.id)
+      : [...featuredRouteIds, route.id];
+    setSavingFeatured(true);
+    try {
+      const result = await apiRequest("/admin/routes/featured", {
+        method: "PUT",
+        body: { routeIds: nextRouteIds },
+      });
+      setFeaturedRouteIds(result.featuredRouteIds);
+      setRoutes((current) => current.map((item) => ({
+        ...item,
+        featured: result.featuredRouteIds.includes(item.id),
+      })));
+      onToast(
+        isFeatured ? "Featured route removed" : "Route featured",
+        `${route.departure} → ${route.destination} ${isFeatured ? "was removed from" : "will appear in"} Available Routes.`,
+      );
+    } catch (requestError) {
+      onToast("Could not update featured routes", requestError.message);
+    } finally {
+      setSavingFeatured(false);
+    }
   }
 
   async function setRouteStatus(route, status) {
@@ -408,7 +468,7 @@ export default function RouteManagement({ query, onQueryChange, onToast }) {
       <section className="route-stats-grid" aria-label="Route statistics">{stats.map(({ label, value, caption, Icon, tone }) => <article className="route-stat-card" key={label}><span className={`route-stat-icon ${tone}`}><Icon size={18} /></span><span className="route-stat-label">{label}</span><strong>{value.toLocaleString("en-BD")}</strong><small>{caption}</small></article>)}</section>
 
       <section className="route-table-card">
-        <header className="route-table-heading"><div><h2>All routes <span>{pagination.total.toLocaleString("en-BD")}</span></h2><p>Database routes with server-side search, filters and pagination.</p></div><div className="route-search-caption"><Search size={15} /><span>{query ? `Searching “${query}”` : "Search locations, route ID or transport"}</span></div></header>
+        <header className="route-table-heading"><div><h2>All routes <span>{pagination.total.toLocaleString("en-BD")}</span></h2><p>Database routes with server-side search, filters and pagination.</p><p className="route-featured-counter">Select up to 6 routes for the customer homepage · <strong>{featuredRouteIds.length}/6 selected</strong></p></div><div className="route-search-caption"><Search size={15} /><span>{query ? `Searching “${query}”` : "Search locations, route ID or transport"}</span></div></header>
         <div className="route-filters">
           <label className="route-search-field"><Search size={15} /><input value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder="Search routes..." aria-label="Search route ID, departure, destination or transport" />{query && <button type="button" aria-label="Clear route search" onClick={() => onQueryChange("")}><X size={14} /></button>}</label>
           <label className="route-filter-select"><MapPin size={15} /><select value={locationFilter} onChange={(event) => setLocationFilter(event.target.value)} aria-label="Filter by location"><option>All locations</option>{locations.map((location) => <option key={location}>{location}</option>)}</select><ChevronDown size={14} /></label>
@@ -416,15 +476,15 @@ export default function RouteManagement({ query, onQueryChange, onToast }) {
           <label className="route-filter-select"><Check size={15} /><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} aria-label="Filter by route status"><option value="All statuses">All statuses</option><option value="active">Active</option><option value="inactive">Inactive</option></select><ChevronDown size={14} /></label>
           <label className="route-filter-select route-sort-select"><ArrowDownUp size={14} /><select value={sort} onChange={(event) => setSort(event.target.value)} aria-label="Sort routes"><option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="departure_asc">Departure A–Z</option><option value="departure_desc">Departure Z–A</option><option value="fare_asc">Fare: low to high</option><option value="fare_desc">Fare: high to low</option></select><ChevronDown size={14} /></label>
         </div>
-        <div className="route-table-scroll"><table className="route-table"><thead><tr><th>ROUTE ID</th><th>DEPARTURE</th><th>DESTINATION</th><th>DISTANCE</th><th>DURATION</th><th>TRANSPORT</th><th>STARTING FARE</th><th>STATUS</th><th><span className="route-sr-only">Actions</span></th></tr></thead><tbody>
-          {pageRoutes.map((route) => <tr key={route.id}><td><button className="route-id-link" type="button" onClick={() => setDrawerId(route.id)}>{route.id}</button></td><td><span className="route-location"><MapPin size={14} />{route.departure}</span></td><td><span className="route-location"><MapPin size={14} />{route.destination}</span></td><td className="route-metric">{route.distance.toLocaleString("en-BD")} km</td><td><span className="route-duration"><Clock3 size={13} />{route.duration}</span></td><td><span className="route-transport"><RouteTransportIcon type={route.transport} />{route.transport}</span></td><td className="route-fare">{formatCurrency(route.fare)}</td><td><RouteStatus status={route.status} /></td><td><RouteActions route={route} open={activeMenu === route.id} onToggleMenu={() => setActiveMenu((current) => current === route.id ? "" : route.id)} onView={() => openAction("view", route)} onEdit={() => openAction("edit", route)} onToggleStatus={(item) => setRouteStatus(item, item.status === "active" ? "inactive" : "active")} onDelete={() => openAction("delete", route)} /></td></tr>)}
-          {!loading && pageRoutes.length === 0 && <tr><td className="route-empty" colSpan="9"><Search size={20} /><strong>No routes found</strong><span>Try changing your search or filters.</span></td></tr>}
-          {loading && <tr><td className="route-empty" colSpan="9"><RefreshCw size={18} /><strong>Loading routes...</strong></td></tr>}
+        <div className="route-table-scroll"><table className="route-table"><thead><tr><th>FEATURED</th><th>ROUTE ID</th><th>DEPARTURE</th><th>DESTINATION</th><th>DISTANCE</th><th>DURATION</th><th>TRANSPORT</th><th>STARTING FARE</th><th>STATUS</th><th><span className="route-sr-only">Actions</span></th></tr></thead><tbody>
+          {pageRoutes.map((route) => <tr key={route.id}><td><input className="route-featured-checkbox" type="checkbox" checked={featuredRouteIds.includes(route.id)} disabled={savingFeatured || (!featuredRouteIds.includes(route.id) && (featuredRouteIds.length >= 6 || route.status !== "active"))} aria-label={`${featuredRouteIds.includes(route.id) ? "Remove" : "Feature"} ${route.departure} to ${route.destination} on homepage`} onChange={() => toggleFeaturedRoute(route)} /></td><td><button className="route-id-link" type="button" onClick={() => setDrawerId(route.id)}>{route.id}</button></td><td><span className="route-location"><MapPin size={14} />{route.departure}</span></td><td><span className="route-location"><MapPin size={14} />{route.destination}</span></td><td className="route-metric">{route.distance.toLocaleString("en-BD")} km</td><td><span className="route-duration"><Clock3 size={13} />{route.duration}</span></td><td><span className="route-transport"><RouteTransportIcon type={route.transport} />{route.transport}</span></td><td className="route-fare">{formatCurrency(route.fare)}</td><td><RouteStatus status={route.status} /></td><td><RouteActions route={route} open={activeMenu === route.id} onToggleMenu={() => setActiveMenu((current) => current === route.id ? "" : route.id)} onView={() => setDrawerId(route.id)} onEdit={() => openAction("edit", route)} onToggleStatus={(item) => setRouteStatus(item, item.status === "active" ? "inactive" : "active")} onDelete={() => openAction("delete", route)} /></td></tr>)}
+          {!loading && pageRoutes.length === 0 && <tr><td className="route-empty" colSpan="10"><Search size={20} /><strong>No routes found</strong><span>Try changing your search or filters.</span></td></tr>}
+          {loading && <tr><td className="route-empty" colSpan="10"><RefreshCw size={18} /><strong>Loading routes...</strong></td></tr>}
         </tbody></table></div>
         <footer className="route-pagination"><span>Showing <strong>{pagination.total ? (page - 1) * pageSize + 1 : 0}–{Math.min(page * pageSize, pagination.total)}</strong> of <strong>{pagination.total.toLocaleString("en-BD")}</strong> routes</span><div className="route-page-controls"><label>Rows per page<select value={pageSize} onChange={(event) => setPageSize(Number(event.target.value))}><option value="8">8</option><option value="12">12</option><option value="20">20</option><option value="50">50</option></select></label><button className="route-icon-button" type="button" aria-label="Previous page" disabled={page <= 1 || loading} onClick={() => setPage((current) => Math.max(1, current - 1))}><ChevronLeft size={17} /></button><span>{page} <small>of</small> {totalPages}</span><button className="route-icon-button" type="button" aria-label="Next page" disabled={page >= totalPages || loading} onClick={() => setPage((current) => Math.min(totalPages, current + 1))}><ChevronRight size={17} /></button></div></footer>
       </section>
 
-      {(adding || editingId) && <RouteModal key={editingId || "new"} route={editingRoute} routes={routes} onClose={() => { setAdding(false); setEditingId(null); }} onSave={saveRoute} />}
+      {(adding || editingId) && <RouteModal key={editingId || "new"} route={editingRoute} routes={routes} extraLocations={adminDestinations.map(({ name }) => name)} onClose={() => { setAdding(false); setEditingId(null); }} onSave={saveRoute} />}
       <RouteDrawer route={drawerRoute} onClose={() => setDrawerId("")} onEdit={(route) => openAction("edit", route)} onSetStatus={setRouteStatus} onDelete={(route) => openAction("delete", route)} />
       <RouteConfirm route={deleteTarget && { ...deleteTarget, actionError, busy: actionBusy }} onClose={() => { if (!actionBusy) { setDeleteTarget(null); setActionError(""); } }} onConfirm={deleteRoute} />
     </section>

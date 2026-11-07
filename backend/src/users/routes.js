@@ -39,6 +39,13 @@ function responseUser(user) {
   };
 }
 
+export function bookingStatusFilter(status) {
+  if (status === "tickets") {
+    return { status: { $in: ["confirmed", "completed"] }, paymentStatus: "paid" };
+  }
+  return status ? { status } : null;
+}
+
 async function recordSecurityNotification(userId, title, message) {
   try {
     await Notification.create({ userId, category: "security", title, message });
@@ -93,7 +100,7 @@ export function createUserRouter({ config, mailer }) {
       const limit = Number(request.query.limit || 10);
       const status = typeof request.query.status === "string" ? request.query.status : "";
       const search = typeof request.query.search === "string" ? request.query.search.trim() : "";
-      const statuses = ["pending", "confirmed", "cancelled", "completed", "expired"];
+      const statuses = ["pending", "confirmed", "cancelled", "completed", "expired", "tickets"];
       if (!Number.isInteger(page) || page < 1 || !Number.isInteger(limit) || limit < 1 || limit > 50) {
         return response.status(400).json({ success: false, message: "Booking pagination is invalid." });
       }
@@ -110,7 +117,8 @@ export function createUserRouter({ config, mailer }) {
           { customerEmail: request.user.email.toLowerCase() },
         ],
       }];
-      if (status) filters.push({ status });
+      const statusFilter = bookingStatusFilter(status);
+      if (statusFilter) filters.push(statusFilter);
       if (search) {
         const escapedSearch = search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
         const searchPattern = { $regex: escapedSearch, $options: "i" };

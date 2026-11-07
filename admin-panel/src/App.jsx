@@ -3,6 +3,7 @@ import UserManagement, { initialUsers } from "./UserManagement.jsx";
 import OperatorManagement, { initialOperators } from "./OperatorManagement.jsx";
 import VehicleManagement, { initialVehicles } from "./VehicleManagement.jsx";
 import RouteManagement from "./RouteManagement.jsx";
+import DestinationManagement from "./DestinationManagement.jsx";
 import ScheduleManagement from "./ScheduleManagement.jsx";
 import BookingManagement, { initialBookings } from "./BookingManagement.jsx";
 import TicketManagement, { initialTickets } from "./TicketManagement.jsx";
@@ -575,6 +576,8 @@ function App() {
             <VehicleManagement vehicles={managedVehicles} setVehicles={setManagedVehicles} operators={managedOperators} setOperators={setManagedOperators} query={search} onQueryChange={setSearch} onToast={showToast} />
           ) : activePage === "Routes" ? (
             <RouteManagement query={search} onQueryChange={setSearch} onToast={showToast} />
+          ) : activePage === "Destinations" ? (
+            <DestinationManagement onToast={showToast} />
           ) : activePage === "Schedules" ? (
             <ScheduleManagement query={search} onQueryChange={setSearch} onToast={showToast} />
           ) : activePage === "Bookings" ? (
