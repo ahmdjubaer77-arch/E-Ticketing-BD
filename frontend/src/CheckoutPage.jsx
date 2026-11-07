@@ -113,7 +113,7 @@ function CheckoutInfoCard({ icon: Icon, title, action, onAction, children }) {
   );
 }
 
-export default function CheckoutPage({ draft, onEditPassengers, onEditSeats, onContinueToPayment }) {
+export default function CheckoutPage({ draft, holdRemainingLabel, onEditPassengers, onEditSeats, onContinueToPayment }) {
   const { query, schedule, selectedSeats, passengers, contact, totalFare } = draft;
   const [promoCode, setPromoCode] = useState("");
   const [promoFeedback, setPromoFeedback] = useState("");
@@ -161,6 +161,7 @@ export default function CheckoutPage({ draft, onEditPassengers, onEditSeats, onC
             <span className="current-step">3</span>
           </div>
         </header>
+        {holdRemainingLabel && <p className="seat-hold-countdown"><Clock3 size={16} /><span>Complete payment proof within</span><strong>{holdRemainingLabel}</strong></p>}
 
         <div className="checkout-layout">
           <div className="checkout-main-content">

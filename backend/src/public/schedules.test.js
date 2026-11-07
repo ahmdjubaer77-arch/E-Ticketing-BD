@@ -56,5 +56,6 @@ test("public schedule response exposes only public listing fields", () => {
     availableSeats: 12,
     fare: 1250,
     coach: "AC Business Coach",
+    bookedSeats: [],
   });
 });

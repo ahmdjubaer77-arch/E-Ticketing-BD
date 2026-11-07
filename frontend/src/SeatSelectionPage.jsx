@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   ArrowLeft,
   ArrowRight,
@@ -15,6 +15,7 @@ import PassengerDetailsPage from "./PassengerDetailsPage.jsx";
 import CheckoutPage from "./CheckoutPage.jsx";
 import PaymentPage from "./PaymentPage.jsx";
 import BookingConfirmationPage from "./BookingConfirmationPage.jsx";
+import { apiRequest } from "./authApi.js";
 import "./seat-selection.css";
 
 const seatColumns = ["A", "B", "C", "D"];
@@ -40,7 +41,7 @@ function getSeatList(totalSeats) {
   ).flat().slice(0, totalSeats);
 }
 
-function BusSeatMap({ totalSeats, bookedSeats, selectedSeats, onToggleSeat }) {
+function BusSeatMap({ totalSeats, bookedSeats, selectedSeats, busySeat, onToggleSeat }) {
   const seats = getSeatList(totalSeats);
 
   return (
@@ -67,8 +68,8 @@ function BusSeatMap({ totalSeats, bookedSeats, selectedSeats, onToggleSeat }) {
       <div className="bus-seat-shell">
         <div className="bus-seat-grid" role="group" aria-label="Bus seat map">
           {seats.map((seat) => {
-            const booked = bookedSeats.includes(seat);
             const selected = selectedSeats.includes(seat);
+            const booked = bookedSeats.includes(seat) && !selected;
             const column = seat[0];
             const hasAisle = column === "C";
 
@@ -78,8 +79,8 @@ function BusSeatMap({ totalSeats, bookedSeats, selectedSeats, onToggleSeat }) {
                 <button
                   className={`bus-seat${booked ? " booked" : ""}${selected ? " selected" : ""}`}
                   type="button"
-                  disabled={booked}
-                  aria-label={`Seat ${seat}${booked ? ", booked" : selected ? ", selected" : ", available"}`}
+                  disabled={booked || Boolean(busySeat)}
+                  aria-label={`Seat ${seat}${booked ? ", booked" : selected ? ", selected" : busySeat === seat ? ", reserving" : ", available"}`}
                   aria-pressed={selected}
                   onClick={() => onToggleSeat(seat)}
                 >
@@ -102,7 +103,7 @@ function BusSeatMap({ totalSeats, bookedSeats, selectedSeats, onToggleSeat }) {
           <i className="legend-seat booked" /> Booked
         </span>
       </div>
-      <p className="seat-map-note">Seat layout is a preview until live operator availability is connected.</p>
+      <p className="seat-map-note">Availability is checked again when you reserve your seats.</p>
     </section>
   );
 }
@@ -143,26 +144,96 @@ function SelectedSeatSummary({ schedule, selectedSeats }) {
 
 export default function SeatSelectionPage({ query, schedule, onBack, onHome }) {
   const [selectedSeats, setSelectedSeats] = useState([]);
+  const [reservation, setReservation] = useState(null);
+  const [bookedSeats, setBookedSeats] = useState(schedule.bookedSeats);
+  const [busySeat, setBusySeat] = useState("");
+  const [seatError, setSeatError] = useState("");
+  const [now, setNow] = useState(Date.now());
   const [step, setStep] = useState("seats");
   const [passengers, setPassengers] = useState([]);
   const [contact, setContact] = useState({ fullName: "", mobile: "", email: "" });
   const [checkoutDraft, setCheckoutDraft] = useState(null);
   const [paymentDraft, setPaymentDraft] = useState(null);
   const [bookingResponse, setBookingResponse] = useState(null);
-  const availableSeats = schedule.seats;
+  const availableSeats = Math.max(0, schedule.seats - selectedSeats.length);
 
-  function toggleSeat(seat) {
-    setSelectedSeats((current) =>
-      current.includes(seat)
-        ? current.filter((value) => value !== seat)
-        : [...current, seat].sort((first, second) => {
-            const firstRow = Number(first.slice(1));
-            const secondRow = Number(second.slice(1));
-            return firstRow === secondRow
-              ? first[0].localeCompare(second[0])
-              : firstRow - secondRow;
-          }),
-    );
+  useEffect(() => {
+    if (step !== "seats") return undefined;
+    let active = true;
+    let refreshing = false;
+    async function refreshSeats() {
+      if (refreshing) return;
+      refreshing = true;
+      try {
+        const { data } = await apiRequest(`/public/schedules/${schedule.id}/seats`);
+        if (active) setBookedSeats(data.bookedSeats);
+      } catch (requestError) {
+        if (active) setSeatError(`Live seat refresh failed: ${requestError.message}`);
+      } finally {
+        refreshing = false;
+      }
+    }
+    refreshSeats();
+    const timer = window.setInterval(refreshSeats, 5000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [schedule.id, step]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const holdRemainingMs = reservation?.expiresAt
+    ? Math.max(0, new Date(reservation.expiresAt).getTime() - now)
+    : null;
+  const holdRemainingLabel = holdRemainingMs === null
+    ? ""
+    : `${Math.floor(holdRemainingMs / 60_000)}:${String(Math.floor(holdRemainingMs % 60_000 / 1000)).padStart(2, "0")}`;
+
+  useEffect(() => {
+    if (holdRemainingMs !== 0 || !reservation) return;
+    setReservation(null);
+    setSelectedSeats([]);
+    setSeatError("Your 3-minute seat hold expired. Select the seats again to start a new reservation.");
+  }, [holdRemainingMs, reservation]);
+
+  async function toggleSeat(seat) {
+    if (busySeat) return;
+    setBusySeat(seat);
+    setSeatError("");
+    try {
+      if (selectedSeats.includes(seat)) {
+        const { data } = await apiRequest(`/public/bookings/${reservation.id}/seats/${seat}`, {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${reservation.accessToken}` },
+        });
+        setSelectedSeats((current) => current.filter((value) => value !== seat));
+        setReservation(data.booking);
+        return;
+      }
+
+      const { data } = await apiRequest("/public/bookings/hold", {
+        method: "POST",
+        body: {
+          scheduleId: schedule.id,
+          seatNumber: seat,
+          ...(reservation ? { bookingId: reservation.id, accessToken: reservation.accessToken } : {}),
+        },
+      });
+      setReservation(data.booking);
+      setSelectedSeats((current) => [...current, seat].sort((first, second) => {
+        const firstRow = Number(first.slice(1));
+        const secondRow = Number(second.slice(1));
+        return firstRow === secondRow ? first[0].localeCompare(second[0]) : firstRow - secondRow;
+      }));
+    } catch (requestError) {
+      setSeatError(requestError.message);
+    } finally {
+      setBusySeat("");
+    }
   }
 
   function continueToDetails() {
@@ -189,8 +260,10 @@ export default function SeatSelectionPage({ query, schedule, onBack, onHome }) {
     return (
       <PaymentPage
         draft={paymentDraft}
-        onBookingStatus={() => {
-          setBookingResponse(null);
+        reservation={reservation}
+        holdRemainingLabel={holdRemainingLabel}
+        onBookingCreated={(booking) => {
+          setBookingResponse({ booking });
           setStep("confirmation");
           window.scrollTo({ top: 0, behavior: "smooth" });
         }}
@@ -207,10 +280,6 @@ export default function SeatSelectionPage({ query, schedule, onBack, onHome }) {
       <BookingConfirmationPage
         draft={paymentDraft}
         bookingResponse={bookingResponse}
-        onBackToPayment={() => {
-          setStep("payment");
-          window.scrollTo({ top: 0, behavior: "smooth" });
-        }}
         onBackToHome={onHome}
       />
     );
@@ -220,6 +289,7 @@ export default function SeatSelectionPage({ query, schedule, onBack, onHome }) {
     return (
       <CheckoutPage
         draft={checkoutDraft}
+        holdRemainingLabel={holdRemainingLabel}
         onContinueToPayment={(draft) => {
           setPaymentDraft(draft);
           setStep("payment");
@@ -243,6 +313,7 @@ export default function SeatSelectionPage({ query, schedule, onBack, onHome }) {
         query={query}
         schedule={schedule}
         selectedSeats={selectedSeats}
+        holdRemainingLabel={holdRemainingLabel}
         passengers={passengers}
         setPassengers={setPassengers}
         contact={contact}
@@ -273,9 +344,10 @@ export default function SeatSelectionPage({ query, schedule, onBack, onHome }) {
             <h1>Select your seats</h1>
           </div>
           <span className="seat-data-note">
-            <span /> Seat map preview
+            <span /> Live seat holds
           </span>
         </div>
+        {seatError && <p className="seat-hold-alert" role="alert">{seatError}</p>}
 
         <section className="seat-journey-card" aria-label="Journey information">
           <div className="seat-journey-route">
@@ -314,10 +386,12 @@ export default function SeatSelectionPage({ query, schedule, onBack, onHome }) {
           <div className="seat-selection-main">
             <BusSeatMap
               totalSeats={schedule.totalSeats}
-              bookedSeats={schedule.bookedSeats}
+              bookedSeats={bookedSeats}
               selectedSeats={selectedSeats}
+              busySeat={busySeat}
               onToggleSeat={toggleSeat}
             />
+            {reservation && holdRemainingMs > 0 && <div className="seat-hold-countdown" role="status"><Clock3 size={16} /><span>Your selected seats are held for</span><strong>{holdRemainingLabel}</strong><small>Complete payment proof before the timer ends.</small></div>}
           </div>
 
           <aside className="seat-booking-panel" aria-label="Seat booking summary">
@@ -350,7 +424,7 @@ export default function SeatSelectionPage({ query, schedule, onBack, onHome }) {
             </button>
             <p className="seat-booking-disclaimer">
               <CircleHelp size={13} />
-              Preview only. Seat availability and fare are not live.
+              A seat is held immediately when selected. The 3-minute timer starts on your first seat.
             </p>
           </aside>
         </div>

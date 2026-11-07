@@ -27,16 +27,6 @@ const transportOptions = [
   { name: "Event", Icon: Ticket },
 ];
 
-function createBookedBusSeats(totalSeats, availableSeats) {
-  const allSeats = Array.from({ length: Math.ceil(totalSeats / 4) }, (_, row) =>
-    ["A", "B", "C", "D"].map((column) => `${column}${row + 1}`),
-  ).flat().slice(0, totalSeats);
-  const bookedSeatCount = totalSeats - availableSeats;
-  return Array.from({ length: bookedSeatCount }, (_, index) =>
-    allSeats[Math.floor(((index + 1) * allSeats.length) / (bookedSeatCount + 1))],
-  );
-}
-
 const departurePeriods = [
   { id: "morning", label: "Morning", time: "6 AM – 12 PM" },
   { id: "afternoon", label: "Afternoon", time: "12 PM – 6 PM" },
@@ -89,7 +79,7 @@ function mapSchedule(schedule) {
     seats: schedule.availableSeats,
     totalSeats: schedule.totalSeats,
     coach: schedule.coach,
-    bookedSeats: createBookedBusSeats(schedule.totalSeats, schedule.availableSeats),
+    bookedSeats: schedule.bookedSeats || [],
   };
 }
 

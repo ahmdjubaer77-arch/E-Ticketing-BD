@@ -6,10 +6,26 @@ import { createAdminRouter } from "./admin/routes.js";
 import { createAuthRouter } from "./auth/routes.js";
 import { createNotificationRouter, createUserRouter } from "./users/routes.js";
 import { createPublicHomeRouter } from "./public/home.js";
+import { createPublicBookingsRouter } from "./public/bookings.js";
+import { createPublicPaymentMethodsRouter } from "./public/payment-methods.js";
+
+export function isAllowedOrigin(origin, config) {
+  const allowedOrigins = new Set([config.clientUrl, config.adminClientUrl].filter(Boolean));
+  if (!origin || allowedOrigins.has(origin)) return true;
+  if (config.nodeEnv === "production") return false;
+
+  try {
+    const parsedOrigin = new URL(origin);
+    return parsedOrigin.origin === origin
+      && parsedOrigin.protocol === "http:"
+      && ["localhost", "127.0.0.1", "[::1]"].includes(parsedOrigin.hostname);
+  } catch {
+    return false;
+  }
+}
 
 export function createApp({ config, mailer }) {
   const app = express();
-  const allowedOrigins = new Set([config.clientUrl, config.adminClientUrl].filter(Boolean));
 
   if (config.nodeEnv === "production") app.set("trust proxy", 1);
   app.disable("x-powered-by");
@@ -17,7 +33,7 @@ export function createApp({ config, mailer }) {
   app.use(
     cors({
       origin(origin, callback) {
-        if (!origin || allowedOrigins.has(origin)) {
+        if (isAllowedOrigin(origin, config)) {
           callback(null, true);
           return;
         }
@@ -25,6 +41,10 @@ export function createApp({ config, mailer }) {
       },
       credentials: true,
     }),
+  );
+  app.use(
+    "/api/public/bookings",
+    express.raw({ type: ["image/jpeg", "image/png", "image/webp"], limit: "1mb" }),
   );
   app.use(express.json({ limit: "16kb", strict: true }));
   app.use(cookieParser());
@@ -44,6 +64,8 @@ export function createApp({ config, mailer }) {
   app.use("/api/notifications", createNotificationRouter(config));
   app.use("/api/auth", createAuthRouter({ config, mailer }));
   app.use("/api/public", createPublicHomeRouter());
+  app.use("/api/public/payment-methods", createPublicPaymentMethodsRouter());
+  app.use("/api/public/bookings", createPublicBookingsRouter());
   app.use("/api/admin", createAdminRouter(config));
   app.use("/api", (_request, response) => {
     response.status(404).json({ success: false, message: "API endpoint not found." });

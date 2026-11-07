@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   ArrowLeft,
   Bus,
@@ -17,6 +17,7 @@ import {
   UsersRound,
   X,
 } from "lucide-react";
+import { apiRequest } from "./authApi.js";
 import "./booking-confirmation.css";
 
 function formatJourneyDate(date) {
@@ -33,20 +34,13 @@ function formatClock(time) {
   return `${hours % 12 || 12}:${String(minutes).padStart(2, "0")} ${hours >= 12 ? "PM" : "AM"}`;
 }
 
-function getConfirmedBooking(response) {
+function getBookingDetails(response) {
   if (!response || typeof response !== "object") return null;
   const booking = response.booking;
-  const payment = response.payment;
-  if (
-    !booking
-    || booking.status !== "confirmed"
-    || !payment
-    || !["paid", "confirmed", "success", "successful"].includes(payment.status)
-  ) {
-    return null;
-  }
-  const reference = booking.reference || booking.pnr;
-  const amount = Number(payment.amount);
+  if (!booking || typeof booking !== "object") return null;
+  const payment = response.payment || { status: booking.paymentStatus, amount: booking.totalAmount };
+  const reference = booking.reference || booking.pnr || booking.ticketCode;
+  const amount = Number(payment.amount ?? booking.totalAmount);
   if (
     typeof reference !== "string"
     || !reference.trim()
@@ -55,7 +49,18 @@ function getConfirmedBooking(response) {
   ) {
     return null;
   }
-  return { booking, payment, reference: reference.trim(), amount };
+  return {
+    booking,
+    payment,
+    reference: reference.trim(),
+    amount,
+    expiresAt: booking.expiresAt,
+    paymentProof: booking.paymentProof || null,
+    isPaid: booking.status === "confirmed" && ["paid", "confirmed", "success", "successful"].includes(payment.status),
+    isReserved: booking.status === "pending" && payment.status === "pending",
+    isExpired: booking.status === "expired" || booking.status === "cancelled",
+    isProofRejected: booking.paymentProof?.reviewStatus === "rejected",
+  };
 }
 
 function makeTicketText(draft, confirmation) {
@@ -63,11 +68,11 @@ function makeTicketText(draft, confirmation) {
   const { reference, payment } = confirmation;
   const amount = confirmation.amount;
   const lines = [
-    "E-TICKETING — CONFIRMED E-TICKET",
+    `E-TICKETING — ${confirmation.isPaid ? "CONFIRMED E-TICKET" : "PENDING SEAT RESERVATION"}`,
     `Booking reference: ${reference}`,
     `Payment status: ${payment.status}`,
     `Payment reference: ${payment.reference || payment.transactionId || "Not provided"}`,
-    `Total paid: BDT ${amount.toLocaleString("en-BD")}`,
+    `${confirmation.isPaid ? "Total paid" : "Total payable"}: BDT ${amount.toLocaleString("en-BD")}`,
     "",
     `Journey: ${query.from} to ${query.to}`,
     `Date: ${formatJourneyDate(query.date)}`,
@@ -97,7 +102,7 @@ function BookingTicket({ draft, confirmation, onClose }) {
         <div className="ticket-modal-heading">
           <span className="ticket-modal-icon"><Ticket size={19} /></span>
           <div>
-            <p>YOUR E-TICKET</p>
+            <p>{confirmation.isPaid ? "YOUR E-TICKET" : "SEAT RESERVATION"}</p>
             <h2 id="ticket-modal-title">Booking {confirmation.reference}</h2>
           </div>
           <button type="button" aria-label="Close ticket" onClick={onClose}><X size={18} /></button>
@@ -112,7 +117,7 @@ function BookingTicket({ draft, confirmation, onClose }) {
             <span>Operator<strong>{schedule.operator}</strong></span>
             <span>Seats<strong>{selectedSeats.join(", ")}</strong></span>
             <span>Payment<strong>{confirmation.payment.status}</strong></span>
-            <span>Total paid<strong>৳ {amount.toLocaleString("en-BD")}</strong></span>
+            <span>{confirmation.isPaid ? "Total paid" : "Total payable"}<strong>৳ {amount.toLocaleString("en-BD")}</strong></span>
           </div>
           <div className="ticket-modal-passengers">
             <strong>Passengers</strong>
@@ -137,14 +142,58 @@ function BookingTicket({ draft, confirmation, onClose }) {
 export default function BookingConfirmationPage({
   draft,
   bookingResponse,
-  onBackToPayment,
   onBackToHome,
 }) {
   const [ticketOpen, setTicketOpen] = useState(false);
-  const confirmation = getConfirmedBooking(bookingResponse);
+  const [liveBooking, setLiveBooking] = useState(bookingResponse?.booking || null);
+  const [now, setNow] = useState(Date.now());
+  const [statusRefreshError, setStatusRefreshError] = useState("");
+
+  useEffect(() => {
+    setLiveBooking(bookingResponse?.booking || null);
+  }, [bookingResponse]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    const initialBooking = bookingResponse?.booking;
+    if (!initialBooking?.id || !initialBooking.accessToken) return undefined;
+    let active = true;
+    let timer;
+    async function refreshStatus() {
+      try {
+        const { data } = await apiRequest(`/public/bookings/${initialBooking.id}`, {
+          headers: { Authorization: `Bearer ${initialBooking.accessToken}` },
+        });
+        if (active) {
+          setLiveBooking((current) => ({ ...data.booking, accessToken: current?.accessToken || initialBooking.accessToken }));
+          setStatusRefreshError("");
+        }
+      } catch (error) {
+        if (active) setStatusRefreshError(error.message);
+      }
+    }
+    refreshStatus();
+    timer = window.setInterval(refreshStatus, 5000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [bookingResponse]);
+
+  const confirmation = getBookingDetails(liveBooking ? { booking: liveBooking } : bookingResponse);
+  const remainingMs = confirmation?.expiresAt
+    ? Math.max(0, new Date(confirmation.expiresAt).getTime() - now)
+    : null;
+  const remainingLabel = remainingMs === null
+    ? ""
+    : `${Math.floor(remainingMs / 60_000)}:${String(Math.floor(remainingMs % 60_000 / 1000)).padStart(2, "0")}`;
 
   function downloadTicket() {
-    if (!confirmation) return;
+    if (!confirmation?.isPaid) return;
     const blob = new Blob([makeTicketText(draft, confirmation)], {
       type: "text/plain;charset=utf-8",
     });
@@ -164,32 +213,42 @@ export default function BookingConfirmationPage({
   return (
     <main className="booking-confirmation-page">
       <div className="booking-confirmation-container">
-        <button className="confirmation-back-link" type="button" onClick={onBackToPayment}>
-          <ArrowLeft size={17} /> Back to payment
+        <button className="confirmation-back-link" type="button" onClick={onBackToHome}>
+          <ArrowLeft size={17} /> Back to home
         </button>
 
-        <section className={`confirmation-hero${confirmation ? " confirmed" : " unconfirmed"}`}>
+        <section className={`confirmation-hero${confirmation?.isPaid ? " confirmed" : " unconfirmed"}`}>
           <span className="confirmation-status-icon">
-            {confirmation ? <Check size={26} strokeWidth={2.5} /> : <TriangleAlert size={25} />}
+            {confirmation?.isPaid ? <Check size={26} strokeWidth={2.5} /> : <TriangleAlert size={25} />}
           </span>
           <p className="confirmation-eyebrow">
-            {confirmation ? "BOOKING COMPLETE" : "BOOKING STATUS"}
+            {confirmation?.isPaid ? "PAYMENT CONFIRMED" : confirmation?.isReserved ? confirmation.paymentProof ? "PAYMENT PROOF SUBMITTED" : "SEATS RESERVED" : confirmation?.isProofRejected ? "PAYMENT PROOF REJECTED" : "BOOKING STATUS"}
           </p>
-          <h1>{confirmation ? "Your Booking is Confirmed!" : "Your booking is not confirmed"}</h1>
+          <h1>{confirmation?.isPaid ? "Your Booking is Confirmed!" : confirmation?.isReserved ? "Your payment is under review" : confirmation?.isProofRejected ? "Payment proof was rejected" : confirmation?.isExpired ? "This reservation has expired" : "Your booking is not confirmed"}</h1>
           <p>
-            {confirmation
+            {confirmation?.isPaid
               ? "Your journey is all set. Your e-ticket is ready to view or download."
-              : "We have not received a confirmed booking or payment response. No ticket has been issued."}
+              : confirmation?.isReserved && confirmation.paymentProof?.reviewStatus === "submitted"
+                ? "Your payment proof was submitted within the hold period. Your seats are reserved while an administrator reviews it."
+                : confirmation?.isReserved && remainingMs > 0
+                  ? `Your seats are held for ${remainingLabel}. Submit payment proof before the timer ends.`
+                  : confirmation?.isReserved
+                  ? "The hold time has ended. The server is releasing these seats."
+                  : confirmation?.isProofRejected
+                    ? "The submitted payment proof was rejected. Please contact the ticket office before making another booking."
+                  : confirmation?.isExpired
+                    ? "This booking is no longer active. Select seats again to make a new reservation."
+                    : "We have not received a confirmed booking or payment response."}
           </p>
           {confirmation ? (
             <div className="confirmation-reference">
-              <span>BOOKING REFERENCE / PNR</span>
+              <span>{confirmation.isPaid ? "BOOKING REFERENCE" : "RESERVATION REFERENCE"}</span>
               <strong>{confirmation.reference}</strong>
             </div>
           ) : (
             <div className="confirmation-unavailable-note" role="status">
               <ShieldCheck size={16} />
-              <span>Payment gateway and booking confirmation API are not connected. No payment was attempted.</span>
+              <span>No online payment was collected. The administrator updates payment status manually.</span>
             </div>
           )}
         </section>
@@ -250,21 +309,25 @@ export default function BookingConfirmationPage({
               <span>Selected seats <strong>{selectedSeats.length} seat{selectedSeats.length === 1 ? "" : "s"}</strong></span>
               <div>{selectedSeats.map((seat) => <i key={seat}>{seat}</i>)}</div>
             </div>
-            <div className={`confirmation-payment-status${confirmation ? " is-paid" : " is-unpaid"}`}>
+            <div className={`confirmation-payment-status${confirmation?.isPaid ? " is-paid" : " is-unpaid"}`}>
               <span>{confirmation ? "Payment status" : "Payment status"}</span>
-              <strong>{confirmation ? confirmation.payment.status : "Not confirmed"}</strong>
+              <strong>{confirmation?.paymentProof?.reviewStatus === "submitted" ? "Proof submitted · under review" : confirmation?.paymentProof?.reviewStatus === "rejected" ? "Proof rejected" : confirmation?.paymentProof?.reviewStatus === "approved" ? "Proof approved" : confirmation ? confirmation.payment.status : "Not confirmed"}</strong>
             </div>
             <div className="confirmation-total">
-              <span>{confirmation ? "Total paid" : "Total payable"}</span>
+              <span>{confirmation?.isPaid ? "Total paid" : "Total payable"}</span>
               <strong>৳ {paidAmount.toLocaleString("en-BD")}</strong>
             </div>
-            {!confirmation && <p className="confirmation-summary-note">This is the fare from your booking draft, not a payment receipt.</p>}
+            {confirmation?.paymentProof && <p className="confirmation-summary-note">Method: {confirmation.paymentProof.paymentMethodName} · TrxID: {confirmation.paymentProof.transactionId}</p>}
+            {confirmation?.isReserved && confirmation.paymentProof?.reviewStatus === "submitted" && <p className="confirmation-summary-note">Your seats are secured while the administrator reviews TrxID {confirmation.paymentProof.transactionId}.</p>}
+            {confirmation?.isReserved && !confirmation.paymentProof && remainingMs > 0 && <p className="confirmation-summary-note">Seat hold expires in {remainingLabel}. Keep this page open for live payment status updates.</p>}
+            {statusRefreshError && <p className="confirmation-summary-note" role="status">Live status refresh failed: {statusRefreshError}</p>}
+            {!confirmation && <p className="confirmation-summary-note">No reservation has been created yet.</p>}
 
             <div className="confirmation-actions">
               <button
                 type="button"
                 className="confirmation-ticket-button"
-                disabled={!confirmation}
+                disabled={!confirmation?.isPaid}
                 onClick={() => setTicketOpen(true)}
               >
                 <Ticket size={16} /> View My Ticket
@@ -272,18 +335,18 @@ export default function BookingConfirmationPage({
               <button
                 type="button"
                 className="confirmation-download-button"
-                disabled={!confirmation}
+                disabled={!confirmation?.isPaid}
                 onClick={downloadTicket}
               >
                 <Download size={16} /> Download Ticket
               </button>
-              {!confirmation && <small>Ticket actions become available after a confirmed booking.</small>}
+              {!confirmation?.isPaid && <small>Tickets become valid after admin marks payment Paid.</small>}
             </div>
           </aside>
         </div>
 
         <div className="confirmation-footer">
-          <span><ShieldCheck size={15} />{confirmation ? "Payment and booking confirmed by the provider." : "Booking reference and ticket are unavailable until confirmed."}</span>
+          <span><ShieldCheck size={15} />{confirmation?.isPaid ? "Booking payment confirmed by the admin." : confirmation?.isReserved && confirmation.paymentProof ? "Seats secured; payment proof is awaiting admin review." : confirmation?.isReserved ? "Reserved seats are pending payment proof." : "No active seat reservation."}</span>
           <button type="button" onClick={onBackToHome}>Back to Home</button>
         </div>
       </div>

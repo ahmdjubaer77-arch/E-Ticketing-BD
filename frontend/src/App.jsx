@@ -77,7 +77,7 @@ function Brand({ onHome }) {
   );
 }
 
-function Header({ noticeOpen, setNoticeOpen, notificationDrawerOpen, onHome, onAuth, user, onDashboard, onNotifications, unreadCount = 0 }) {
+function Header({ noticeOpen, setNoticeOpen, notificationDrawerOpen, onHome, onAuth, onBookings, user, onDashboard, onNotifications, unreadCount = 0 }) {
   return (
     <header className="site-header">
       <Brand onHome={onHome} />
@@ -88,7 +88,7 @@ function Header({ noticeOpen, setNoticeOpen, notificationDrawerOpen, onHome, onA
         <a className="desktop-nav-link" href="#booking">
           Tickets <ChevronDown size={15} />
         </a>
-        <a className="desktop-nav-link" href="#routes">
+        <a className="desktop-nav-link" href={user ? "/dashboard?section=bookings" : "/login"} onClick={(event) => { event.preventDefault(); onBookings(); }}>
           My Bookings
         </a>
         <a className="desktop-nav-link" href="#benefits">
@@ -182,7 +182,11 @@ function routeFromLocation() {
 }
 
 function routePath(page, mode = "login") {
-  if (page === "dashboard") return "/dashboard";
+  if (page === "dashboard") {
+    return new URLSearchParams(window.location.search).get("section") === "bookings"
+      ? "/dashboard?section=bookings"
+      : "/dashboard";
+  }
   if (page === "auth") return mode === "register" ? "/signup" : "/login";
   return "/";
 }
@@ -497,7 +501,7 @@ function Benefits() {
   );
 }
 
-function BottomNavigation({ active, setActive, onHome }) {
+function BottomNavigation({ active, setActive, onHome, onBookings }) {
   return (
     <nav className="bottom-nav" aria-label="Quick navigation">
       {navigation.map(({ name, Icon }) => (
@@ -509,6 +513,7 @@ function BottomNavigation({ active, setActive, onHome }) {
           onClick={() => {
             setActive(name);
             if (name === "Home") onHome();
+            if (name === "Bookings") onBookings();
           }}
         >
           <Icon size={22} strokeWidth={active === name ? 2.4 : 1.8} />
@@ -534,7 +539,7 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState(null);
   const [user, setUser] = useState(null);
   const [unreadCount, setUnreadCount] = useState(0);
-  const [dashboardSection, setDashboardSection] = useState("profile");
+  const [dashboardSection, setDashboardSection] = useState(() => new URLSearchParams(window.location.search).get("section") === "bookings" ? "bookings" : "profile");
   const [authChecked, setAuthChecked] = useState(false);
   const [toast, setToast] = useState(null);
   const [homeContent, setHomeContent] = useState({ routes: [], destinations: [], locations: [], deals: [] });
@@ -542,7 +547,11 @@ export default function App() {
   const [homeError, setHomeError] = useState("");
   const [homeRefreshKey, setHomeRefreshKey] = useState(0);
   const [heroSlide, setHeroSlide] = useState(0);
-  const [returnPath, setReturnPath] = useState(() => (window.location.pathname === "/dashboard" ? "/dashboard" : null));
+  const [returnPath, setReturnPath] = useState(() => (
+    window.location.pathname === "/dashboard"
+      ? window.location.search.includes("section=bookings") ? "/dashboard?section=bookings" : "/dashboard"
+      : null
+  ));
   const authRequestVersion = useRef(0);
   const closeToast = useCallback(() => setToast(null), []);
   const closeNotificationDrawer = useCallback(() => setNotificationDrawerOpen(false), []);
@@ -599,7 +608,7 @@ export default function App() {
         if (requestVersion !== authRequestVersion.current) return;
         setUser(null);
         if (routeFromLocation() === "dashboard") {
-          setReturnPath("/dashboard");
+          setReturnPath(new URLSearchParams(window.location.search).get("section") === "bookings" ? "/dashboard?section=bookings" : "/dashboard");
           setAuthMode("login");
           setPage("auth");
           window.history.replaceState({}, "", "/login?returnTo=%2Fdashboard");
@@ -618,13 +627,16 @@ export default function App() {
     function handlePopState() {
       const requestedPage = routeFromLocation();
       if (requestedPage === "dashboard" && authChecked && !user) {
-        setReturnPath("/dashboard");
+        setReturnPath(new URLSearchParams(window.location.search).get("section") === "bookings" ? "/dashboard?section=bookings" : "/dashboard");
         setAuthMode("login");
         setPage("auth");
         window.history.replaceState({}, "", "/login?returnTo=%2Fdashboard");
         return;
       }
       setPage(requestedPage);
+      if (requestedPage === "dashboard") {
+        setDashboardSection(new URLSearchParams(window.location.search).get("section") === "bookings" ? "bookings" : "profile");
+      }
       if (window.location.pathname === "/signup") setAuthMode("register");
       else if (window.location.pathname === "/login") setAuthMode("login");
     }
@@ -682,6 +694,17 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
+  function openMyBookings() {
+    setDashboardSection("bookings");
+    if (user) {
+      window.history.pushState({}, "", "/dashboard?section=bookings");
+      setPage("dashboard");
+      return;
+    }
+    setReturnPath("/dashboard?section=bookings");
+    navigate("auth", "login");
+  }
+
   function goHome() {
     navigate("home");
   }
@@ -712,7 +735,13 @@ export default function App() {
           description: `Welcome, ${nextUser.fullName}.`,
         });
     setReturnPath(null);
-    navigate(method === "login" ? "home" : "dashboard");
+    if (returnPath === "/dashboard?section=bookings") {
+      setDashboardSection("bookings");
+      window.history.pushState({}, "", "/dashboard?section=bookings");
+      setPage("dashboard");
+    } else {
+      navigate(returnPath === "/dashboard" || method !== "login" ? "dashboard" : "home");
+    }
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -828,6 +857,7 @@ export default function App() {
             setNoticeOpen={setNoticeOpen}
             notificationDrawerOpen={notificationDrawerOpen}
             onHome={goHome}
+            onBookings={openMyBookings}
             onAuth={openAuth}
             user={user}
             onDashboard={() => navigate("dashboard")}
@@ -866,6 +896,7 @@ export default function App() {
             setNoticeOpen={setNoticeOpen}
             notificationDrawerOpen={notificationDrawerOpen}
             onHome={goHome}
+            onBookings={openMyBookings}
             onAuth={openAuth}
             user={user}
             onDashboard={() => navigate("dashboard")}
@@ -890,6 +921,7 @@ export default function App() {
             onUserUpdate={(nextUser) => setUser((current) => ({ ...current, ...nextUser }))}
             onLogout={handleLogout}
             onAccountDeleted={handleAccountDeleted}
+            onBrowseTrips={goHome}
             onToast={setToast}
             onUnreadCountChange={setUnreadCount}
           />
@@ -962,6 +994,7 @@ export default function App() {
             active={activeNavigation}
             setActive={setActiveNavigation}
             onHome={goHome}
+            onBookings={openMyBookings}
           />
           <footer className="desktop-footer" id="support">
             <span>Travel a little easier with E-Ticketing.</span>

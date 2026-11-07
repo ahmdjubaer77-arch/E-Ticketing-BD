@@ -2,26 +2,17 @@ import React, { useEffect, useState } from "react";
 import {
   ArrowLeft,
   ArrowRight,
-  Banknote,
   Bus,
   CalendarDays,
-  Check,
   Clock3,
-  CreditCard,
+  Copy,
+  ImagePlus,
   LockKeyhole,
-  ShieldCheck,
-  Smartphone,
   Ticket,
   TriangleAlert,
 } from "lucide-react";
+import { apiRequest } from "./authApi.js";
 import "./payment.css";
-
-const paymentMethods = [
-  { id: "bkash", name: "bKash", detail: "Mobile wallet", mark: "bK", kind: "wallet" },
-  { id: "nagad", name: "Nagad", detail: "Mobile wallet", mark: "N", kind: "wallet" },
-  { id: "rocket", name: "Rocket", detail: "Mobile wallet", mark: "R", kind: "wallet" },
-  { id: "card", name: "Debit / Credit Card", detail: "Visa · Mastercard · local cards", mark: null, kind: "card" },
-];
 
 function formatJourneyDate(date) {
   if (!date) return "Date not selected";
@@ -84,76 +75,112 @@ function PaymentSummary({ draft }) {
   );
 }
 
-function PaymentResult({ status, onBack, onBookingStatus }) {
-  if (status === "checking") {
-    return (
-      <div className="payment-status-panel checking" role="status" aria-live="polite">
-        <span className="payment-spinner" />
-        <span>
-          <strong>Checking secure payment availability</strong>
-          <small>No payment is being initiated during this check.</small>
-        </span>
-      </div>
-    );
-  }
-
-  if (status === "success") {
-    return (
-      <div className="payment-status-panel success" role="status">
-        <span className="payment-status-icon"><Check size={19} /></span>
-        <span>
-          <strong>Payment confirmed</strong>
-          <small>Your payment provider confirmed the transaction.</small>
-        </span>
-      </div>
-    );
-  }
-
-  if (status === "failed") {
-    return (
-      <div className="payment-status-panel failed" role="alert">
-        <span className="payment-status-icon"><TriangleAlert size={19} /></span>
-        <span>
-          <strong>Payment could not be completed</strong>
-          <small>No confirmed payment was received. Please try again or choose another method.</small>
-        </span>
-        <button type="button" onClick={onBack}>Return to checkout</button>
-      </div>
-    );
-  }
-
-  if (status === "unavailable") {
-    return (
-      <div className="payment-status-panel failed" role="alert">
-        <span className="payment-status-icon"><TriangleAlert size={19} /></span>
-        <span>
-          <strong>Online payment is not available yet</strong>
-          <small>No payment gateway is connected. No transaction was attempted and no money was charged.</small>
-        </span>
-        <button type="button" onClick={onBookingStatus}>View booking status</button>
-        <button type="button" onClick={onBack}>Return to checkout</button>
-      </div>
-    );
-  }
-
-  return null;
-}
-
-export default function PaymentPage({ draft, onBack, onBookingStatus }) {
-  const [selectedMethod, setSelectedMethod] = useState("bkash");
+export default function PaymentPage({ draft, reservation, holdRemainingLabel, onBack, onBookingCreated }) {
+  const [methods, setMethods] = useState([]);
+  const [methodsLoading, setMethodsLoading] = useState(true);
+  const [methodsError, setMethodsError] = useState("");
+  const [methodsRetryKey, setMethodsRetryKey] = useState(0);
+  const [selectedMethodId, setSelectedMethodId] = useState("");
+  const [transactionId, setTransactionId] = useState("");
+  const [proofImage, setProofImage] = useState(null);
   const [status, setStatus] = useState("idle");
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    if (status !== "checking") return undefined;
-    const timer = window.setTimeout(() => setStatus("unavailable"), 500);
-    return () => window.clearTimeout(timer);
-  }, [status]);
+    let active = true;
+    apiRequest("/public/payment-methods", { signal: AbortSignal.timeout(10_000) })
+      .then(({ data }) => {
+        if (!active) return;
+        const availableMethods = data.paymentMethods || [];
+        setMethods(availableMethods);
+        setSelectedMethodId(availableMethods[0]?.id || "");
+      })
+      .catch((requestError) => {
+        if (active) {
+          setMethods([]);
+          setMethodsError(requestError.name === "TimeoutError"
+            ? "Loading payment methods timed out. Check your connection and retry."
+            : requestError.message);
+        }
+      })
+      .finally(() => {
+        if (active) setMethodsLoading(false);
+      });
+    return () => { active = false; };
+  }, [methodsRetryKey]);
 
-  const method = paymentMethods.find(({ id }) => id === selectedMethod);
+  const selectedMethod = methods.find((method) => method.id === selectedMethodId) || methods[0];
 
-  function payNow() {
+  async function submitPaymentProof() {
     if (status === "checking") return;
+    if (methodsLoading) {
+      setError("Payment methods are still loading. Please try again in a moment.");
+      return;
+    }
+    if (methodsError || methods.length === 0) {
+      setMethodsError("");
+      setMethodsLoading(true);
+      setMethodsRetryKey((key) => key + 1);
+      setError("Refreshing payment methods. Please submit again when the available accounts appear.");
+      return;
+    }
+    if (!/^[A-Za-z0-9_-]{4,100}$/.test(transactionId.trim())) {
+      setError("Enter the transaction ID from your payment receipt.");
+      return;
+    }
+    if (proofImage && proofImage.size > 1024 * 1024) {
+      setError("Payment screenshot must be 1 MB or smaller.");
+      return;
+    }
+
     setStatus("checking");
+    setError("");
+    try {
+      if (!reservation?.id || !reservation.accessToken) {
+        throw new Error("Your seat hold is missing or expired. Go back and select your seats again.");
+      }
+
+      const proofOptions = {
+        method: "POST",
+        headers: { Authorization: `Bearer ${reservation.accessToken}` },
+      };
+      const proofRequest = proofImage
+        ? {
+            ...proofOptions,
+            body: proofImage,
+            headers: {
+              ...proofOptions.headers,
+              "X-Payment-Method-Id": selectedMethod.id,
+              "X-Transaction-Id": transactionId.trim(),
+              "X-Customer-Name": draft.contact.fullName,
+              "X-Customer-Email": draft.contact.email,
+              "X-Customer-Phone": draft.contact.mobile,
+            },
+          }
+        : {
+            ...proofOptions,
+            body: {
+              paymentMethodId: selectedMethod.id,
+              transactionId: transactionId.trim(),
+              customerName: draft.contact.fullName,
+              customerEmail: draft.contact.email,
+              customerPhone: draft.contact.mobile,
+            },
+          };
+      const { data: proofData } = await apiRequest(`/public/bookings/${reservation.id}/proof`, proofRequest);
+      onBookingCreated(proofData.booking);
+    } catch (requestError) {
+      setError(requestError.message);
+      setStatus("idle");
+    }
+  }
+
+  async function copyAccountNumber() {
+    try {
+      await navigator.clipboard.writeText(selectedMethod.accountNumber);
+    } catch {
+      setError("Could not copy the account number. Please copy it manually.");
+    }
   }
 
   return (
@@ -165,78 +192,58 @@ export default function PaymentPage({ draft, onBack, onBookingStatus }) {
 
         <header className="payment-page-heading">
           <div>
-            <p className="payment-eyebrow">PAYMENT <span /> SECURE CHECKOUT</p>
-            <h1>Choose how to pay</h1>
-            <p>Select a payment method for your booking.</p>
+            <p className="payment-eyebrow">TICKET <span /> RESERVATION</p>
+            <h1>Reserve your seats</h1>
+            <p>{holdRemainingLabel ? `Submit payment proof within ${holdRemainingLabel} to secure your seats.` : "Your seats are held while the administrator reviews your payment proof."}</p>
           </div>
-          <span className="payment-lock-badge"><LockKeyhole size={15} /> Secure payment</span>
+          <span className="payment-lock-badge"><LockKeyhole size={15} /> 3-minute hold</span>
         </header>
 
         <div className="payment-layout">
           <div className="payment-main">
             <section className="payment-method-section" aria-labelledby="payment-method-title">
               <div className="payment-section-heading">
-                <span className="payment-section-icon"><Banknote size={18} /></span>
+                <span className="payment-section-icon"><Ticket size={18} /></span>
                 <div>
-                  <h2 id="payment-method-title">Payment method</h2>
-                  <p>Choose your preferred payment option.</p>
+                  <h2 id="payment-method-title">Pay and submit your proof</h2>
+                  <p>Choose an account, pay outside the website, then enter the transaction ID.</p>
                 </div>
               </div>
-
-              <div className="payment-method-grid" role="radiogroup" aria-label="Payment method">
-                {paymentMethods.map((item) => {
-                  const selected = selectedMethod === item.id;
-                  return (
-                    <button
-                      className={`payment-method-card${selected ? " selected" : ""}`}
-                      type="button"
-                      role="radio"
-                      aria-checked={selected}
-                      key={item.id}
-                      onClick={() => {
-                        setSelectedMethod(item.id);
-                        setStatus("idle");
-                      }}
-                    >
-                      <span className={`payment-method-mark ${item.id}`}>
-                        {item.mark ? item.mark : <CreditCard size={22} />}
-                      </span>
-                      <span className="payment-method-copy">
-                        <strong>{item.name}</strong>
-                        <small>{item.detail}</small>
-                      </span>
-                      <span className="payment-radio" aria-hidden="true">
-                        {selected && <i />}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-
+              {methodsLoading ? <div className="payment-method-loading" role="status">Loading available payment methods…</div> : methodsError ? <div className="payment-method-error" role="alert">{methodsError}<button type="button" onClick={() => { setMethodsError(""); setMethodsLoading(true); setMethodsRetryKey((key) => key + 1); }}>Retry</button></div> : methods.length === 0 ? <div className="payment-method-error" role="status">No active payment methods are configured. Please contact the ticket office or try again.</div> : <>
+                <label className="payment-form-field">Payment method
+                  <select value={selectedMethodId} onChange={(event) => setSelectedMethodId(event.target.value)}>
+                    {methods.map((method) => <option value={method.id} key={method.id}>{method.name} · {method.accountType}</option>)}
+                  </select>
+                </label>
+                {selectedMethod && <div className="payment-recipient-card">
+                  <div><small>PAY TO · {selectedMethod.accountType.toUpperCase()}</small><strong>{selectedMethod.name}</strong><span>{selectedMethod.accountNumber}</span>{selectedMethod.instructions && <p>{selectedMethod.instructions}</p>}</div>
+                  <button type="button" aria-label="Copy payment account number" onClick={copyAccountNumber}><Copy size={15} />Copy</button>
+                </div>}
+                <label className="payment-form-field">Transaction ID
+                  <input value={transactionId} onChange={(event) => setTransactionId(event.target.value)} maxLength={100} required placeholder="Enter the TrxID from your payment receipt" />
+                </label>
+                <label className="payment-proof-upload">
+                  <ImagePlus size={17} />
+                  <span><strong>{proofImage ? proofImage.name : "Add payment screenshot (optional)"}</strong><small>JPEG, PNG, or WebP · up to 1 MB</small></span>
+                  <input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => {
+                    const selected = event.target.files?.[0] || null;
+                    if (selected && !["image/jpeg", "image/png", "image/webp"].includes(selected.type)) {
+                      setError("Upload a JPEG, PNG, or WebP screenshot.");
+                      setProofImage(null);
+                    } else {
+                      setError("");
+                      setProofImage(selected);
+                    }
+                  }} />
+                </label>
+              </>}
               <div className="payment-method-note">
-                {method?.kind === "card" ? (
-                  <>
-                    <CreditCard size={17} />
-                    <span><strong>Card payments use a hosted checkout</strong><small>Card number, expiry and CVV must only be entered on your payment provider&apos;s secure page. This website does not collect card details.</small></span>
-                  </>
-                ) : (
-                  <>
-                    <Smartphone size={17} />
-                    <span><strong>{method?.name} payment</strong><small>You would confirm payment in the provider&apos;s secure app or hosted page. No wallet PIN or OTP is collected here.</small></span>
-                  </>
-                )}
+                <TriangleAlert size={17} />
+                <span><strong>Admin review required</strong><small>After payment, submit your TrxID and optional screenshot. Seats are held for 3 minutes while an administrator reviews your proof. No payment is collected by this website.</small></span>
               </div>
             </section>
 
-            <div className="payment-security-notice">
-              <span><ShieldCheck size={19} /></span>
-              <div>
-                <strong>Your payment information stays protected</strong>
-                <p>Payment details should be entered only on a verified provider-hosted checkout. We never store card numbers, CVV, PINs or one-time passwords.</p>
-              </div>
-            </div>
-
-            <PaymentResult status={status} onBack={onBack} onBookingStatus={() => onBookingStatus(draft)} />
+            {error && <div className="payment-status-panel failed" role="alert"><span className="payment-status-icon"><TriangleAlert size={19} /></span><span><strong>{reservation ? "Reservation is held; proof was not submitted" : "Could not submit payment proof"}</strong><small>{error}</small></span><button type="button" onClick={() => setError("")}>Dismiss</button></div>}
           </div>
 
           <div className="payment-sidebar">
@@ -244,16 +251,20 @@ export default function PaymentPage({ draft, onBack, onBookingStatus }) {
             <button
               className="pay-now-button"
               type="button"
-              onClick={payNow}
-              disabled={status === "checking" || status === "success"}
+              onClick={submitPaymentProof}
+              disabled={status === "checking"}
             >
               {status === "checking" ? (
-                <><span className="pay-button-spinner" /> Checking availability</>
+                <><span className="pay-button-spinner" /> {reservation ? "Submitting proof…" : "Reserving seats and submitting…"}</>
+              ) : methodsLoading ? (
+                <>Payment methods loading <ArrowRight size={17} /></>
+              ) : methodsError || methods.length === 0 ? (
+                <>Retry payment methods <ArrowRight size={17} /></>
               ) : (
-                <>Pay Now <ArrowRight size={17} /></>
+                <>Submit payment proof <ArrowRight size={17} /></>
               )}
             </button>
-            <p className="payment-secure-caption"><LockKeyhole size={14} />You will not be charged on this demo.</p>
+            <p className="payment-secure-caption"><LockKeyhole size={14} />Your TrxID and screenshot are visible only to admins.</p>
           </div>
         </div>
       </div>

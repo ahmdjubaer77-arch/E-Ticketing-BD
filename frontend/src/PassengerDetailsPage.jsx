@@ -138,6 +138,7 @@ export default function PassengerDetailsPage({
   query,
   schedule,
   selectedSeats,
+  holdRemainingLabel,
   passengers,
   setPassengers,
   contact,
@@ -253,6 +254,7 @@ export default function PassengerDetailsPage({
             <span className="progress-upcoming">3</span>
           </div>
         </header>
+        {holdRemainingLabel && <p className="seat-hold-countdown"><Clock3 size={16} /><span>Complete payment proof within</span><strong>{holdRemainingLabel}</strong></p>}
 
         <div className="passenger-details-layout">
           <form className="passenger-form-column" noValidate onSubmit={handleSubmit}>

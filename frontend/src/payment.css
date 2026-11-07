@@ -106,6 +106,25 @@
   box-shadow: 0 4px 18px rgba(17, 47, 36, 0.035);
 }
 
+.payment-form-field { display: grid; gap: 7px; margin-top: 13px; color: var(--text); font-size: 11px; font-weight: 700; }
+.payment-form-field select,.payment-form-field input { width: 100%; min-height: 43px; padding: 10px 12px; color: var(--text); border: 1px solid #dfe7e1; border-radius: 9px; outline: 0; background: #fff; font: inherit; font-size: 12px; }
+.payment-form-field select:focus,.payment-form-field input:focus { border-color: var(--emerald); box-shadow: 0 0 0 3px rgba(4,120,87,.09); }
+.payment-form-field select:disabled,.payment-form-field input:disabled { color: #78847c; background: #f5f7f5; }
+.payment-recipient-card { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; padding: 13px; border: 1px solid #dcece2; border-radius: 11px; background: #f5faf6; }
+.payment-recipient-card > div { display: grid; min-width: 0; gap: 4px; }
+.payment-recipient-card small { color: #728078; font-size: 8px; font-weight: 800; letter-spacing: .6px; }
+.payment-recipient-card strong { color: var(--text); font-size: 12px; }
+.payment-recipient-card span { color: var(--emerald-deep); font-size: 18px; font-weight: 800; letter-spacing: .4px; }
+.payment-recipient-card p { margin: 2px 0 0; color: #66746c; font-size: 10px; line-height: 1.45; }
+.payment-recipient-card button { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 5px; padding: 7px 9px; color: var(--emerald-deep); border: 1px solid #cfe3d6; border-radius: 7px; background: #fff; cursor: pointer; font-size: 9px; font-weight: 700; }
+.payment-proof-upload { display: flex; align-items: center; gap: 10px; margin-top: 12px; padding: 11px; color: var(--emerald-deep); border: 1px dashed #b9d8c5; border-radius: 9px; background: #fbfdfb; cursor: pointer; }
+.payment-proof-upload > span { display: grid; min-width: 0; gap: 3px; }
+.payment-proof-upload strong { overflow: hidden; color: var(--text); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.payment-proof-upload small { color: var(--secondary); font-size: 9px; }
+.payment-proof-upload input { width: 1px; height: 1px; overflow: hidden; opacity: 0; }
+.payment-method-loading,.payment-method-error { padding: 13px; color: var(--secondary); border: 1px solid var(--border); border-radius: 9px; font-size: 10px; }
+.payment-method-error { display: flex; justify-content: space-between; gap: 8px; color: #984b3c; border-color: #f0d7d1; background: #fff7f5; }
+.payment-method-error button { color: #984b3c; border: 0; background: transparent; cursor: pointer; font-size: 10px; font-weight: 700; }
 .payment-section-heading {
   display: flex;
   align-items: center;
@@ -589,7 +608,7 @@
 }
 
 .pay-now-button:disabled {
-  cursor: wait;
+  cursor: not-allowed;
   opacity: 0.85;
 }
 

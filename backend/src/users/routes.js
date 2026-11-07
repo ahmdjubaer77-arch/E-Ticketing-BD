@@ -3,6 +3,8 @@ import bcrypt from "bcrypt";
 import { rateLimit } from "express-rate-limit";
 import User from "../models/User.js";
 import Notification from "../models/Notification.js";
+import Booking from "../models/Booking.js";
+import { expirePendingBookings } from "../bookings/expiration.js";
 import { createAuthMiddleware } from "../auth/middleware.js";
 import { clearAuthCookie, setAuthCookie } from "../auth/cookies.js";
 import {
@@ -83,6 +85,101 @@ export function createUserRouter({ config, mailer }) {
   const sensitiveLimiter = createLimiter(15 * 60 * 1000, 5, "Too many security changes. Please try again later.");
 
   router.use(requireAuth);
+
+  router.get("/bookings", async (request, response, next) => {
+    try {
+      await expirePendingBookings();
+      const page = Number(request.query.page || 1);
+      const limit = Number(request.query.limit || 10);
+      const status = typeof request.query.status === "string" ? request.query.status : "";
+      const search = typeof request.query.search === "string" ? request.query.search.trim() : "";
+      const statuses = ["pending", "confirmed", "cancelled", "completed", "expired"];
+      if (!Number.isInteger(page) || page < 1 || !Number.isInteger(limit) || limit < 1 || limit > 50) {
+        return response.status(400).json({ success: false, message: "Booking pagination is invalid." });
+      }
+      if (status && !statuses.includes(status)) {
+        return response.status(400).json({ success: false, message: "Choose a valid booking status." });
+      }
+      if (search.length > 100) {
+        return response.status(400).json({ success: false, message: "Booking search must be 100 characters or fewer." });
+      }
+
+      const filters = [{
+        $or: [
+          { bookedBy: request.user._id },
+          { customerEmail: request.user.email.toLowerCase() },
+        ],
+      }];
+      if (status) filters.push({ status });
+      if (search) {
+        const escapedSearch = search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const searchPattern = { $regex: escapedSearch, $options: "i" };
+        filters.push({
+          $or: [
+            { ticketCode: searchPattern },
+            { "tickets.ticketCode": searchPattern },
+            { departure: searchPattern },
+            { destination: searchPattern },
+            { operatorName: searchPattern },
+            { transport: searchPattern },
+            { seatNumbers: searchPattern },
+            { "paymentProof.transactionId": searchPattern },
+          ],
+        });
+      }
+      const filter = { $and: filters };
+      const [bookings, total] = await Promise.all([
+        Booking.find(filter)
+          .sort({ createdAt: -1, _id: -1 })
+          .skip((page - 1) * limit)
+          .limit(limit)
+          .lean(),
+        Booking.countDocuments(filter),
+      ]);
+      return response.json({
+        success: true,
+        message: "Your bookings were retrieved.",
+        data: {
+          bookings: bookings.map((booking) => ({
+            id: booking._id.toString(),
+            reference: booking.ticketCode,
+            customerName: booking.customerName,
+            departure: booking.departure,
+            destination: booking.destination,
+            transport: booking.transport,
+            operatorName: booking.operatorName,
+            departureAt: booking.departureAt,
+            arrivalAt: booking.arrivalAt,
+            seatNumbers: booking.seatNumbers,
+            totalAmount: booking.farePerSeat * booking.seatNumbers.length,
+            paymentStatus: booking.paymentStatus,
+            paymentProof: booking.paymentProof ? {
+              paymentMethodName: booking.paymentProof.paymentMethodName,
+              transactionId: booking.paymentProof.transactionId,
+              submittedAt: booking.paymentProof.submittedAt,
+              reviewStatus: booking.paymentProof.reviewStatus,
+            } : null,
+            status: booking.status,
+            expiresAt: booking.expiresAt,
+            bookedAt: booking.createdAt,
+            ticketCodes: ["confirmed", "completed"].includes(booking.status) && booking.paymentStatus === "paid"
+              ? booking.seatNumbers.map((seatNumber) =>
+                  booking.tickets?.find((ticket) => ticket.seatNumber === seatNumber)?.ticketCode
+                  || `${booking.ticketCode}-${seatNumber}`)
+              : [],
+          })),
+          pagination: {
+            page,
+            limit,
+            total,
+            pages: Math.ceil(total / limit),
+          },
+        },
+      });
+    } catch (error) {
+      return next(error);
+    }
+  });
 
   router.get("/me", async (request, response, next) => {
     try {

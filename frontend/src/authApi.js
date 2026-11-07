@@ -2,13 +2,20 @@ const apiBaseUrl = import.meta.env.PROD
   ? ""
   : (import.meta.env.VITE_API_BASE_URL || "").replace(/\/+$/, "");
 
-export async function apiRequest(path, { method = "GET", body, headers } = {}) {
+export async function apiRequest(path, { method = "GET", body, headers, signal } = {}) {
   let response;
   try {
     response = await fetch(`${apiBaseUrl}/api${path}`, {
       method,
       credentials: "include",
-      headers: body instanceof FormData ? headers : body ? { "Content-Type": "application/json", ...headers } : headers,
+      signal,
+      headers: body instanceof FormData
+        ? headers
+        : body instanceof Blob
+          ? { "Content-Type": body.type || "application/octet-stream", ...headers }
+          : body
+            ? { "Content-Type": "application/json", ...headers }
+            : headers,
       body: body instanceof FormData || body instanceof Blob ? body : body ? JSON.stringify(body) : undefined,
     });
   } catch {

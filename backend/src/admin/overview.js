@@ -1,4 +1,5 @@
 import { Router } from "express";
+import Booking from "../models/Booking.js";
 import Operator from "../models/Operator.js";
 import Route from "../models/Route.js";
 import Schedule from "../models/Schedule.js";
@@ -100,6 +101,8 @@ export function createAdminOverviewRouter() {
         scheduleStatusRows,
         transportRows,
         recentSchedules,
+        totalBookings,
+        bookingTrend,
       ] = await Promise.all([
         User.countDocuments(userFilter),
         Operator.countDocuments(activeRecordFilter),
@@ -132,12 +135,15 @@ export function createAdminOverviewRouter() {
           .populate({ path: "vehicleId", select: "name registrationNumber" })
           .populate({ path: "routeId", select: "departure destination" })
           .lean(),
+        Booking.countDocuments(),
+        countsByDate(Booking, start, end),
       ]);
 
       const dailyTrend = (rows) => createOverviewTrend(start, days, rows);
       const userCounts = dailyTrend(userTrend);
       const operatorCounts = dailyTrend(operatorTrend);
       const scheduleCounts = dailyTrend(scheduleTrend);
+      const bookingCounts = dailyTrend(bookingTrend);
 
       return response.json({
         success: true,
@@ -150,20 +156,22 @@ export function createAdminOverviewRouter() {
             vehicles: { total: totalVehicles },
             routes: { total: totalRoutes, active: activeRoutes },
             schedules: { total: totalSchedules, upcoming: upcomingSchedules },
+            bookings: { total: totalBookings, newInPeriod: bookingCounts.reduce((sum, item) => sum + item.count, 0) },
           },
           trend: userCounts.map((item, index) => ({
             date: item.date,
             users: item.count,
             operators: operatorCounts[index].count,
             schedules: scheduleCounts[index].count,
+            bookings: bookingCounts[index].count,
           })),
           scheduleStatuses: countMap(scheduleStatusRows, scheduleStatuses),
           schedulesByTransport: countMap(transportRows, transports),
           recentSchedules: recentSchedules.map(toScheduleResponse),
           availability: {
-            bookingAnalytics: false,
+            bookingAnalytics: true,
             revenueAnalytics: false,
-            message: "Booking and revenue analytics are unavailable because booking and payment models are not configured in this backend.",
+            message: "Seat bookings are saved in the database. Payment processing and revenue tracking are not connected.",
           },
         },
       });

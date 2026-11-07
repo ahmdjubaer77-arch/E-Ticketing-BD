@@ -1,15 +1,27 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
+  ArrowRight,
+  Bus,
   Bell,
   CalendarCheck,
+  CalendarDays,
   CheckCircle2,
+  Clock3,
+  CreditCard,
   CircleUserRound,
+  Download,
   History,
   ImagePlus,
   LogOut,
+  RefreshCw,
+  Search,
   Settings,
+  Ship,
+  Ticket,
   TicketCheck,
   Trash2,
+  TrainFront,
+  TriangleAlert,
   Upload,
 } from "lucide-react";
 import { apiRequest } from "./authApi.js";
@@ -24,7 +36,198 @@ const sections = [
   { id: "settings", label: "Account settings", Icon: Settings },
 ];
 
-export default function UserDashboard({ user, initialSection = "profile", onUserUpdate, onLogout, onAccountDeleted, onToast, onUnreadCountChange }) {
+const bookingStatusLabels = {
+  pending: "Pending",
+  confirmed: "Confirmed",
+  cancelled: "Cancelled",
+  completed: "Completed",
+  expired: "Expired",
+};
+
+function formatBookingDate(value, options) {
+  return new Intl.DateTimeFormat("en-BD", options).format(new Date(value));
+}
+
+function formatBookingMoney(value) {
+  return `৳${new Intl.NumberFormat("en-BD").format(value)}`;
+}
+
+function BookingTransportIcon({ transport }) {
+  if (transport === "Train") return <TrainFront size={17} />;
+  if (transport === "Launch") return <Ship size={17} />;
+  return <Bus size={17} />;
+}
+
+function MyBookings({ onBrowseTrips }) {
+  const [bookings, setBookings] = useState([]);
+  const [pagination, setPagination] = useState({ page: 1, pages: 1, total: 0 });
+  const [page, setPage] = useState(1);
+  const [status, setStatus] = useState("");
+  const [search, setSearch] = useState("");
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [expandedId, setExpandedId] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [now, setNow] = useState(Date.now());
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setRefreshKey((key) => key + 1), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    const nextExpiry = bookings
+      .filter((booking) => booking.status === "pending" && booking.expiresAt)
+      .map((booking) => new Date(booking.expiresAt).getTime())
+      .filter((expiresAt) => expiresAt > Date.now())
+      .sort((first, second) => first - second)[0];
+    if (!nextExpiry) return undefined;
+    const timer = window.setTimeout(
+      () => setRefreshKey((key) => key + 1),
+      Math.max(0, nextExpiry - Date.now() + 250),
+    );
+    return () => window.clearTimeout(timer);
+  }, [bookings]);
+
+  useEffect(() => {
+    let active = true;
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      setLoading(true);
+      setError("");
+      const params = new URLSearchParams({ page: String(page), limit: "10" });
+      if (status) params.set("status", status);
+      if (search.trim()) params.set("search", search.trim());
+      apiRequest(`/users/bookings?${params}`, { signal: controller.signal })
+        .then((result) => {
+          if (!active) return;
+          setBookings(result.data.bookings);
+          setPagination(result.data.pagination);
+          setExpandedId((current) => result.data.bookings.some((booking) => booking.id === current) ? current : "");
+        })
+        .catch((requestError) => {
+          if (!active || requestError.name === "AbortError") return;
+          setError(requestError.message || "Your bookings could not be loaded.");
+        })
+        .finally(() => {
+          if (active) setLoading(false);
+        });
+    }, search ? 250 : 0);
+
+    return () => {
+      active = false;
+      controller.abort();
+      window.clearTimeout(timer);
+    };
+  }, [page, refreshKey, search, status]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, status]);
+
+  function downloadTicket(booking) {
+    if (booking.status !== "confirmed" || booking.paymentStatus !== "paid") return;
+    const contents = [
+      "E-TICKETING — CONFIRMED E-TICKET",
+      `Booking reference: ${booking.reference}`,
+      `Passenger: ${booking.customerName}`,
+      `Journey: ${booking.departure} to ${booking.destination}`,
+      `Departure: ${formatBookingDate(booking.departureAt, { dateStyle: "long", timeStyle: "short" })}`,
+      `Operator: ${booking.operatorName}`,
+      `Transport: ${booking.transport}`,
+      `Seats: ${booking.seatNumbers.join(", ")}`,
+      `Total paid: ${formatBookingMoney(booking.totalAmount)}`,
+      "",
+      "Ticket codes:",
+      ...booking.ticketCodes,
+    ].join("\r\n");
+    const file = new Blob([contents], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(file);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `ticket-${booking.reference}.txt`;
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  function timeRemaining(expiresAt) {
+    const milliseconds = Math.max(0, new Date(expiresAt).getTime() - now);
+    return `${Math.floor(milliseconds / 60_000)}:${String(Math.floor(milliseconds % 60_000 / 1000)).padStart(2, "0")}`;
+  }
+
+  return (
+    <div className="my-bookings">
+      <div className="my-bookings-toolbar">
+        <label className="my-bookings-search"><Search size={16} /><input type="search" value={search} maxLength={100} placeholder="Search reference, route, seat or transaction ID" aria-label="Search my bookings" onChange={(event) => { setPage(1); setSearch(event.target.value); }} />{search && <button type="button" aria-label="Clear booking search" onClick={() => { setPage(1); setSearch(""); }}>×</button>}</label>
+        <label className="my-bookings-status"><span>Booking status</span><select value={status} aria-label="Filter bookings by status" onChange={(event) => { setPage(1); setStatus(event.target.value); }}><option value="">All bookings</option><option value="pending">Pending</option><option value="confirmed">Confirmed</option><option value="completed">Completed</option><option value="cancelled">Cancelled</option><option value="expired">Expired</option></select></label>
+        <button className="dashboard-secondary-button my-bookings-refresh" type="button" disabled={loading} onClick={() => setRefreshKey((key) => key + 1)}><RefreshCw size={15} />{loading ? "Refreshing…" : "Refresh"}</button>
+      </div>
+
+      {error && <div className="my-bookings-error" role="alert"><TriangleAlert size={17} /><span>{error}</span><button type="button" onClick={() => setRefreshKey((key) => key + 1)}>Try again</button></div>}
+
+      {loading && bookings.length === 0 && !error && <div className="my-bookings-message" role="status">Loading your bookings…</div>}
+      {!loading && !error && bookings.length === 0 && (
+        <div className="my-bookings-empty">
+          <span><CalendarCheck size={25} /></span>
+          <h3>{search || status ? "No matching bookings" : "No bookings yet"}</h3>
+          <p>{search || status ? "Try a different search or status filter." : "Your reservations and tickets will appear here after you book."}</p>
+          {!search && !status && <button className="dashboard-primary-button" type="button" onClick={onBrowseTrips}>Browse trips <ArrowRight size={15} /></button>}
+        </div>
+      )}
+
+      <div className={`my-bookings-list${loading ? " is-loading" : ""}`}>
+        {bookings.map((booking) => {
+          const expanded = expandedId === booking.id;
+          const hasActiveTimer = booking.status === "pending" && booking.expiresAt;
+          const isPaid = booking.paymentStatus === "paid" && ["confirmed", "completed"].includes(booking.status);
+          return (
+            <article className="my-booking-card" key={booking.id}>
+              <button className="my-booking-summary" type="button" aria-expanded={expanded} onClick={() => setExpandedId(expanded ? "" : booking.id)}>
+                <span className="my-booking-icon"><BookingTransportIcon transport={booking.transport} /></span>
+                <span className="my-booking-primary">
+                  <strong>{booking.departure} <ArrowRight size={14} /> {booking.destination}</strong>
+                  <small>{booking.transport} · {booking.operatorName} · {formatBookingDate(booking.departureAt, { day: "2-digit", month: "short", year: "numeric" })}</small>
+                </span>
+                <span className={`my-booking-status ${booking.status}`}><i />{bookingStatusLabels[booking.status] || booking.status}</span>
+                <span className="my-booking-total">{formatBookingMoney(booking.totalAmount)}</span>
+                <span className="my-booking-expand">{expanded ? "Hide details" : "Details"}</span>
+              </button>
+              {expanded && (
+                <div className="my-booking-details">
+                  <div className="my-booking-detail-grid">
+                    <div><small>BOOKING REFERENCE</small><strong>{booking.reference}</strong></div>
+                    <div><small>DEPARTURE</small><strong>{formatBookingDate(booking.departureAt, { dateStyle: "medium", timeStyle: "short" })}</strong></div>
+                    <div><small>ARRIVAL</small><strong>{formatBookingDate(booking.arrivalAt, { dateStyle: "medium", timeStyle: "short" })}</strong></div>
+                    <div><small>SEATS</small><strong>{booking.seatNumbers.join(", ")}</strong></div>
+                    <div><small>PAYMENT</small><strong className={`my-booking-payment ${booking.paymentStatus}`}>{booking.paymentStatus}</strong></div>
+                    <div><small>BOOKED ON</small><strong>{formatBookingDate(booking.bookedAt, { dateStyle: "medium", timeStyle: "short" })}</strong></div>
+                  </div>
+                  {hasActiveTimer && <p className="my-booking-notice pending"><Clock3 size={15} />Seat hold expires in <strong>{timeRemaining(booking.expiresAt)}</strong>. Submit payment proof before the timer ends.</p>}
+                  {booking.paymentProof && <p className={`my-booking-notice ${booking.paymentProof.reviewStatus}`}><CreditCard size={15} />Payment proof {booking.paymentProof.reviewStatus === "submitted" ? "is waiting for admin review" : `was ${booking.paymentProof.reviewStatus}`}{booking.paymentProof.transactionId && <> · Transaction ID <strong>{booking.paymentProof.transactionId}</strong></>}</p>}
+                  {!booking.paymentProof && booking.paymentStatus === "pending" && <p className="my-booking-notice pending"><Clock3 size={15} />Payment proof has not been submitted for this reservation.</p>}
+                  {isPaid && booking.ticketCodes.length > 0 && <div className="my-booking-tickets"><div><Ticket size={16} /><strong>Your ticket codes</strong></div>{booking.ticketCodes.map((code, index) => <span key={code}>Seat {booking.seatNumbers[index]} <strong>{code}</strong></span>)}</div>}
+                  <div className="my-booking-actions">
+                    {isPaid && booking.ticketCodes.length > 0 && <button className="dashboard-primary-button" type="button" onClick={() => downloadTicket(booking)}><Download size={15} />Download ticket</button>}
+                    <span>{isPaid ? <><CheckCircle2 size={15} /> Payment confirmed</> : <><CalendarDays size={15} />Booking and payment updates appear here</>}</span>
+                  </div>
+                </div>
+              )}
+            </article>
+          );
+        })}
+      </div>
+
+      {pagination.pages > 1 && <div className="my-bookings-pagination"><span>Showing {((page - 1) * 10) + 1}–{Math.min(page * 10, pagination.total)} of {pagination.total}</span><div><button type="button" disabled={page <= 1 || loading} onClick={() => setPage((current) => current - 1)}>Previous</button><span>Page {page} of {pagination.pages}</span><button type="button" disabled={page >= pagination.pages || loading} onClick={() => setPage((current) => current + 1)}>Next</button></div></div>}
+    </div>
+  );
+}
+
+export default function UserDashboard({ user, initialSection = "profile", onUserUpdate, onLogout, onAccountDeleted, onToast, onUnreadCountChange, onBrowseTrips }) {
   const [section, setSection] = useState(initialSection);
   const [loggingOut, setLoggingOut] = useState(false);
   const [logoutError, setLogoutError] = useState("");
@@ -217,7 +420,7 @@ export default function UserDashboard({ user, initialSection = "profile", onUser
 
   async function deleteAccount(event) {
     event.preventDefault();
-    if (!window.confirm("Permanently delete your account and its current profile and notification data? This cannot be undone.")) return;
+    if (!window.confirm("Permanently delete your account and notifications? Booking and payment records are retained separately. This cannot be undone.")) return;
     setSecurityBusy(true);
     try {
       const result = await apiRequest("/users/me", { method: "DELETE", body: deletion });
@@ -284,7 +487,13 @@ export default function UserDashboard({ user, initialSection = "profile", onUser
               type="button"
               className={section === id ? "active" : ""}
               aria-current={section === id ? "page" : undefined}
-              onClick={() => setSection(id)}
+              onClick={() => {
+                setSection(id);
+                const url = new URL(window.location.href);
+                if (id === "bookings") url.searchParams.set("section", "bookings");
+                else url.searchParams.delete("section");
+                window.history.pushState({}, "", `${url.pathname}${url.search}`);
+              }}
             >
               <Icon size={18} />
               <span>{label}</span>
@@ -403,7 +612,7 @@ export default function UserDashboard({ user, initialSection = "profile", onUser
               </section>
               <form className="dashboard-settings-form dashboard-deactivate" onSubmit={deleteAccount}>
                 <h3>Delete account</h3>
-                <p>This permanently deletes your account and notifications. Booking and payment records are not currently stored by this project.</p>
+                <p>This permanently deletes your account and notifications. Booking and payment records are retained separately and are not deleted with your account.</p>
                 <label><span>Current password</span><input type="password" autoComplete="current-password" required value={deletion.currentPassword} onChange={(event) => setDeletion((current) => ({ ...current, currentPassword: event.target.value }))} /></label>
                 <label><span>Type DELETE ACCOUNT to confirm</span><input required value={deletion.confirmation} onChange={(event) => setDeletion((current) => ({ ...current, confirmation: event.target.value }))} /></label>
                 <button className="dashboard-danger-button" type="submit" disabled={securityBusy}>{securityBusy ? "Deleting…" : "Permanently delete account"}</button>
@@ -411,11 +620,14 @@ export default function UserDashboard({ user, initialSection = "profile", onUser
             </div>
           )}
 
-          {["bookings", "tickets", "history"].includes(section) && (
+          {section === "bookings" && <MyBookings onBrowseTrips={onBrowseTrips} />}
+
+          {["tickets", "history"].includes(section) && (
             <div className="dashboard-empty-state dashboard-integration-state">
               <span><ActiveIcon size={23} /></span>
-              <h3>{section === "bookings" ? "Booking records unavailable" : section === "tickets" ? "Ticket records unavailable" : "Booking history unavailable"}</h3>
-              <p>The existing project has no booking, payment, or ticket backend/API to retrieve verified records from. No sample or fabricated travel records are shown.</p>
+              <h3>{section === "tickets" ? "Your tickets are in My bookings" : "Booking history"} </h3>
+              <p>{section === "tickets" ? "Open a confirmed booking in My bookings to view and download its ticket codes." : "Your past and current reservations are available in My bookings."}</p>
+              <button className="dashboard-secondary-button" type="button" onClick={() => setSection("bookings")}>Open My bookings</button>
             </div>
           )}
         </section>

@@ -217,9 +217,9 @@ export function hasReservedSeats(schedule) {
 function rejectReservedScheduleMutation(response) {
   return response.status(409).json({
     success: false,
-    message: "This schedule has reserved seats. Changes that could affect passengers are blocked until booking-aware validation is available.",
+    message: "This schedule has reserved seats. Cancel active bookings before making changes that could affect passengers.",
     code: "SCHEDULE_HAS_RESERVED_SEATS",
-    bookingValidationAvailable: false,
+    bookingValidationAvailable: true,
   });
 }
 
@@ -338,7 +338,7 @@ export function createAdminSchedulesRouter() {
           schedules: schedules.map(scheduleResponse),
           statistics: statistics[0] ?? { total: 0, upcoming: 0, completed: 0, cancelled: 0 },
           pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
-          bookingValidationAvailable: false,
+          bookingValidationAvailable: true,
         },
       });
     } catch (error) {
@@ -359,7 +359,7 @@ export function createAdminSchedulesRouter() {
       return response.json({
         success: true,
         message: "Schedule details retrieved.",
-        data: { schedule: scheduleResponse(schedule), bookingValidationAvailable: false },
+        data: { schedule: scheduleResponse(schedule), bookingValidationAvailable: true },
       });
     } catch (error) {
       return next(error);
@@ -379,7 +379,7 @@ export function createAdminSchedulesRouter() {
       return response.status(201).json({
         success: true,
         message: "Schedule created.",
-        data: { schedule: scheduleResponse(schedule), bookingValidationAvailable: false },
+        data: { schedule: scheduleResponse(schedule), bookingValidationAvailable: true },
       });
     } catch (error) {
       return next(error);
@@ -407,7 +407,7 @@ export function createAdminSchedulesRouter() {
       for (const [field, value] of Object.entries(values)) schedule[field] = value;
       await schedule.save();
       await schedule.populate(populateRelations);
-      return response.json({ success: true, message: "Schedule updated.", data: { schedule: scheduleResponse(schedule), bookingValidationAvailable: false } });
+      return response.json({ success: true, message: "Schedule updated.", data: { schedule: scheduleResponse(schedule), bookingValidationAvailable: true } });
     } catch (error) {
       return next(error);
     }
@@ -434,7 +434,7 @@ export function createAdminSchedulesRouter() {
       return response.json({
         success: true,
         message: `Schedule marked ${status}.`,
-        data: { schedule: scheduleResponse(schedule), bookingValidationAvailable: false },
+        data: { schedule: scheduleResponse(schedule), bookingValidationAvailable: true },
       });
     } catch (error) {
       return next(error);
@@ -458,7 +458,7 @@ export function createAdminSchedulesRouter() {
       return response.json({
         success: true,
         message: "Schedule cancelled and archived; its record has been retained.",
-        data: { schedule: scheduleResponse(schedule), deleted: false, archived: true, bookingValidationAvailable: false },
+        data: { schedule: scheduleResponse(schedule), deleted: false, archived: true, bookingValidationAvailable: true },
       });
     } catch (error) {
       return next(error);

@@ -4,6 +4,8 @@ import Operator from "../models/Operator.js";
 import Route from "../models/Route.js";
 import Schedule from "../models/Schedule.js";
 import Vehicle from "../models/Vehicle.js";
+import Booking from "../models/Booking.js";
+import { expirePendingBookings } from "../bookings/expiration.js";
 
 const transports = new Set(["Bus", "Train", "Launch", "Event"]);
 const maxSchedules = 1000;
@@ -41,7 +43,7 @@ export function parsePublicScheduleQuery(query) {
   return { errors, values: { from, to, dateRange, transport } };
 }
 
-export function publicScheduleResponse(schedule) {
+export function publicScheduleResponse(schedule, bookedSeats = []) {
   return {
     id: String(schedule._id),
     operator: schedule.operatorId.name,
@@ -54,6 +56,7 @@ export function publicScheduleResponse(schedule) {
     availableSeats: schedule.availableSeats,
     fare: schedule.fare,
     coach: schedule.vehicleId.name,
+    bookedSeats,
   };
 }
 
@@ -68,6 +71,7 @@ export function createPublicSchedulesRouter() {
 
   router.get("/", limiter, async (request, response, next) => {
     try {
+      await expirePendingBookings();
       const { errors, values } = parsePublicScheduleQuery(request.query);
       if (Object.keys(errors).length) {
         return response.status(400).json({
@@ -145,13 +149,58 @@ export function createPublicSchedulesRouter() {
       const validSchedules = schedules.filter(
         (schedule) => schedule.operatorId && schedule.vehicleId && schedule.routeId,
       );
+      const activeBookings = validSchedules.length
+        ? await Booking.find({
+            scheduleId: { $in: validSchedules.map((schedule) => schedule._id) },
+            status: { $in: ["pending", "confirmed"] },
+          }).select("scheduleId seatNumbers").lean()
+        : [];
+      const seatsBySchedule = new Map();
+      for (const booking of activeBookings) {
+        const key = String(booking.scheduleId);
+        seatsBySchedule.set(key, [...(seatsBySchedule.get(key) || []), ...booking.seatNumbers]);
+      }
 
       return response.json({
         success: true,
         message: "Available schedules retrieved.",
         data: {
-          schedules: validSchedules.map(publicScheduleResponse),
+          schedules: validSchedules.map((schedule) =>
+            publicScheduleResponse(schedule, seatsBySchedule.get(String(schedule._id)) || [])),
           total,
+        },
+      });
+    } catch (error) {
+      return next(error);
+    }
+  });
+
+  router.get("/:id/seats", limiter, async (request, response, next) => {
+    try {
+      await expirePendingBookings();
+      if (!/^[a-f\d]{24}$/i.test(request.params.id)) {
+        return response.status(400).json({ success: false, message: "Schedule ID must be a valid MongoDB ObjectId." });
+      }
+      const schedule = await Schedule.findOne({
+        _id: request.params.id,
+        transport: "Bus",
+        status: { $in: ["scheduled", "active"] },
+        departureAt: { $gt: new Date() },
+        deletedAt: null,
+      }).select("totalSeats availableSeats").lean();
+      if (!schedule) return response.status(404).json({ success: false, message: "Upcoming bus schedule not found." });
+
+      const activeBookings = await Booking.find({
+        scheduleId: schedule._id,
+        status: { $in: ["pending", "confirmed"] },
+      }).select("seatNumbers").lean();
+      return response.json({
+        success: true,
+        message: "Live seat availability retrieved.",
+        data: {
+          totalSeats: schedule.totalSeats,
+          availableSeats: schedule.availableSeats,
+          bookedSeats: [...new Set(activeBookings.flatMap((booking) => booking.seatNumbers))],
         },
       });
     } catch (error) {

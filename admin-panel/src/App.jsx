@@ -6,6 +6,7 @@ import RouteManagement from "./RouteManagement.jsx";
 import ScheduleManagement from "./ScheduleManagement.jsx";
 import BookingManagement, { initialBookings } from "./BookingManagement.jsx";
 import TicketManagement, { initialTickets } from "./TicketManagement.jsx";
+import PaymentManagement from "./PaymentManagement.jsx";
 import OfferManagement from "./OfferManagement.jsx";
 import { apiRequest } from "./api.js";
 import {
@@ -570,6 +571,8 @@ function App() {
             <BookingManagement bookings={bookings} setBookings={setBookings} query={search} onQueryChange={setSearch} onToast={showToast} />
           ) : activePage === "Tickets" ? (
             <TicketManagement tickets={tickets} setTickets={setTickets} query={search} onQueryChange={setSearch} onToast={showToast} />
+          ) : activePage === "Payments" ? (
+            <PaymentManagement query={search} onToast={showToast} />
           ) : activePage === "Offers" ? (
             <OfferManagement query={search} onToast={showToast} />
           ) : activePage === "Overview" ? (
