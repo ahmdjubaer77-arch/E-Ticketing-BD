@@ -1,0 +1,9 @@
+node_modules/
+**/node_modules/
+**/.env
+**/.env.*
+!**/.env.example
+frontend/dist/
+admin-panel/dist/
+backend/coverage/
+npm-debug.log*
