@@ -1,7 +1,11 @@
+const apiBaseUrl = import.meta.env.PROD
+  ? ""
+  : (import.meta.env.VITE_API_BASE_URL || "").replace(/\/+$/, "");
+
 export async function apiRequest(path, { method = "GET", body, headers } = {}) {
   let response;
   try {
-    response = await fetch(`${import.meta.env.VITE_API_BASE_URL || ""}/api${path}`, {
+    response = await fetch(`${apiBaseUrl}/api${path}`, {
       method,
       credentials: "include",
       headers: body instanceof FormData ? headers : body ? { "Content-Type": "application/json", ...headers } : headers,

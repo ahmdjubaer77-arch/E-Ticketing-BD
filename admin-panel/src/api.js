@@ -1,3 +1,7 @@
+const apiBaseUrl = import.meta.env.PROD
+  ? ""
+  : (import.meta.env.VITE_API_BASE_URL || "").replace(/\/+$/, "");
+
 export class ApiError extends Error {
   constructor(message, status, code) {
     super(message);
@@ -9,7 +13,7 @@ export class ApiError extends Error {
 
 export async function apiRequest(path, { body, method = "GET", signal } = {}) {
   const isFormData = body instanceof FormData;
-  const response = await fetch(`/api${path}`, {
+  const response = await fetch(`${apiBaseUrl}/api${path}`, {
     method,
     credentials: "include",
     headers: body === undefined || isFormData ? {} : { "Content-Type": "application/json" },
@@ -24,7 +28,7 @@ export async function apiRequest(path, { body, method = "GET", signal } = {}) {
 }
 
 export async function uploadImage(path, file) {
-  const response = await fetch(`/api${path}`, {
+  const response = await fetch(`${apiBaseUrl}/api${path}`, {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": file.type },
