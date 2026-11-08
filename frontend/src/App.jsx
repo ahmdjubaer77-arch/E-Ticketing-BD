@@ -93,24 +93,24 @@ function Brand({ onHome }) {
   );
 }
 
-function Header({ noticeOpen, setNoticeOpen, notificationDrawerOpen, onHome, onAuth, onTickets, onBookings, user, onDashboard, onNotifications, unreadCount = 0 }) {
+function Header({ noticeOpen, setNoticeOpen, notificationDrawerOpen, onHome, onAuth, onTickets, onBookings, onOffers, onHelp, page, user, onDashboard, onNotifications, unreadCount = 0 }) {
   return (
     <header className="site-header">
       <Brand onHome={onHome} />
       <nav className="desktop-nav" aria-label="Main navigation">
-        <a className="desktop-nav-link active" href="#home" onClick={onHome}>
+        <a className={`desktop-nav-link${page === "home" ? " active" : ""}`} href="/" onClick={(event) => { event.preventDefault(); onHome(); }}>
           Home
         </a>
-        <a className="desktop-nav-link" href={user ? "/dashboard?section=tickets" : "/login"} onClick={(event) => { event.preventDefault(); onTickets(); }}>
+        <a className={`desktop-nav-link${page === "tickets" ? " active" : ""}`} href="/tickets" onClick={(event) => { event.preventDefault(); onTickets(); }}>
           My Tickets
         </a>
-        <a className="desktop-nav-link" href={user ? "/dashboard?section=bookings" : "/login"} onClick={(event) => { event.preventDefault(); onBookings(); }}>
+        <a className={`desktop-nav-link${page === "bookings" ? " active" : ""}`} href="/bookings" onClick={(event) => { event.preventDefault(); onBookings(); }}>
           My Bookings
         </a>
-        <a className="desktop-nav-link" href="#benefits">
+        <a className={`desktop-nav-link${page === "offers" ? " active" : ""}`} href="/offers" onClick={(event) => { event.preventDefault(); onOffers(); }}>
           Offers
         </a>
-        <a className="desktop-nav-link" href="#support">
+        <a className={`desktop-nav-link${page === "help" ? " active" : ""}`} href="/help" onClick={(event) => { event.preventDefault(); onHelp(); }}>
           Help
         </a>
       </nav>
@@ -192,12 +192,17 @@ function Toast({ toast, onClose }) {
 function routeFromLocation() {
   const pathname = window.location.pathname.replace(/\/+$/, "") || "/";
   if (pathname === "/dashboard") return "dashboard";
+  if (pathname === "/tickets") return "tickets";
+  if (pathname === "/bookings") return "bookings";
+  if (pathname === "/offers") return "offers";
+  if (pathname === "/help") return "help";
   if (pathname === "/signup") return "auth";
   if (pathname === "/login") return "auth";
   return "home";
 }
 
 function routePath(page, mode = "login") {
+  if (["tickets", "bookings", "offers", "help"].includes(page)) return `/${page}`;
   if (page === "dashboard") {
     const section = dashboardSectionFromSearch(window.location.search);
     return section && section !== "profile" ? `/dashboard?section=${encodeURIComponent(section)}` : "/dashboard";
@@ -525,9 +530,34 @@ function Benefits() {
   );
 }
 
-function BottomNavigation({ active, setActive, onHome, onTickets, onBookings }) {
+function InformationPage({ page, deals, onBookDeal, onHome }) {
+  if (page === "offers") return (
+    <main className="information-page">
+      <section className="information-hero"><span>TRAVEL MORE FOR LESS</span><h1>Offers for your next journey</h1><p>Explore current travel deals and book your next trip in a few easy steps.</p></section>
+      <HotDealsSection deals={deals} onBookDeal={onBookDeal} />
+      <Benefits />
+    </main>
+  );
   return (
-    <nav className="bottom-nav" aria-label="Quick navigation">
+    <main className="information-page help-page">
+      <section className="information-hero"><span>WE’RE HERE TO HELP</span><h1>How can we help?</h1><p>Find quick answers about booking, payment, tickets, and your account.</p></section>
+      <section className="help-grid" aria-label="Help topics">
+        {[
+          ["How do I book a ticket?", "Choose your transport, route, date, and seats. Add passenger details, then follow the payment instructions to submit your booking."],
+          ["Where can I find my ticket?", "Sign in and open My Tickets to see ticket details and booking status."],
+          ["How does payment work?", "Pay using an active method shown at checkout, then submit the transaction ID for review."],
+          ["Need help with a booking?", "Email our support team with your booking reference and the email address used to book."],
+        ].map(([title, text]) => <article className="help-card" key={title}><h2>{title}</h2><p>{text}</p></article>)}
+      </section>
+      <a className="help-contact" href="mailto:support@eticketing.example"><CircleHelp size={18} /> Contact support</a>
+    </main>
+  );
+}
+
+function BottomNavigation({ active, onHome, onTickets, onBookings, onSupport }) {
+  return (
+    <nav className="bottom-nav" aria-label="Quick navigation" style={{ "--active-index": Math.max(0, navigation.findIndex(({ name }) => name === active)) }}>
+      {active && <span className="bottom-nav-indicator" aria-hidden="true" />}
       {navigation.map(({ name, Icon }) => (
         <button
           className={`bottom-nav-item${active === name ? " current" : ""}`}
@@ -535,13 +565,13 @@ function BottomNavigation({ active, setActive, onHome, onTickets, onBookings }) 
           key={name}
           aria-current={active === name ? "page" : undefined}
           onClick={() => {
-            setActive(name);
             if (name === "Home") onHome();
             if (name === "My Tickets") onTickets();
             if (name === "Bookings") onBookings();
+            if (name === "Support") onSupport();
           }}
         >
-          <Icon size={22} strokeWidth={active === name ? 2.4 : 1.8} />
+          <Icon size={19} strokeWidth={active === name ? 2 : 1.7} />
           <span>{name}</span>
         </button>
       ))}
@@ -555,7 +585,6 @@ export default function App() {
   const [to, setTo] = useState("Chattogram");
   const [date, setDate] = useState("2026-11-10");
   const [passengers, setPassengers] = useState(1);
-  const [activeNavigation, setActiveNavigation] = useState("Home");
   const [noticeOpen, setNoticeOpen] = useState(false);
   const [notificationDrawerOpen, setNotificationDrawerOpen] = useState(false);
   const [message, setMessage] = useState("");
@@ -573,8 +602,10 @@ export default function App() {
   const [homeRefreshKey, setHomeRefreshKey] = useState(0);
   const [heroSlide, setHeroSlide] = useState(0);
   const [returnPath, setReturnPath] = useState(() => (
-    window.location.pathname === "/dashboard"
+    ["/dashboard", "/tickets", "/bookings"].includes(window.location.pathname)
+      ? window.location.pathname === "/dashboard"
       ? dashboardSectionFromSearch(window.location.search) !== "profile" ? `/dashboard?section=${dashboardSectionFromSearch(window.location.search)}` : "/dashboard"
+      : window.location.pathname
       : null
   ));
   const authRequestVersion = useRef(0);
@@ -590,7 +621,7 @@ export default function App() {
   }, [page]);
 
   useEffect(() => {
-    if (page !== "home") return undefined;
+    if (!["home", "offers", "help"].includes(page)) return undefined;
     let active = true;
     setHomeLoading(true);
     setHomeError("");
@@ -632,11 +663,15 @@ export default function App() {
       } catch (error) {
         if (requestVersion !== authRequestVersion.current) return;
         setUser(null);
-        if (routeFromLocation() === "dashboard") {
-          setReturnPath(dashboardSectionFromSearch(window.location.search) !== "profile" ? `/dashboard?section=${dashboardSectionFromSearch(window.location.search)}` : "/dashboard");
+        if (["dashboard", "tickets", "bookings"].includes(routeFromLocation())) {
+          const requestedPage = routeFromLocation();
+          const requestedPath = requestedPage === "dashboard"
+            ? dashboardSectionFromSearch(window.location.search) !== "profile" ? `/dashboard?section=${dashboardSectionFromSearch(window.location.search)}` : "/dashboard"
+            : `/${requestedPage}`;
+          setReturnPath(requestedPath);
           setAuthMode("login");
           setPage("auth");
-          window.history.replaceState({}, "", "/login?returnTo=%2Fdashboard");
+          window.history.replaceState({}, "", `/login?returnTo=${encodeURIComponent(requestedPath)}`);
           if (error.networkError || error.status >= 500) {
             setToast({ type: "error", title: "Unable to verify your session", description: getAuthErrorMessage(error) });
           }
@@ -651,11 +686,14 @@ export default function App() {
   useEffect(() => {
     function handlePopState() {
       const requestedPage = routeFromLocation();
-      if (requestedPage === "dashboard" && authChecked && !user) {
-        setReturnPath(dashboardSectionFromSearch(window.location.search) !== "profile" ? `/dashboard?section=${dashboardSectionFromSearch(window.location.search)}` : "/dashboard");
+      if (["dashboard", "tickets", "bookings"].includes(requestedPage) && authChecked && !user) {
+        const requestedPath = requestedPage === "dashboard"
+          ? dashboardSectionFromSearch(window.location.search) !== "profile" ? `/dashboard?section=${dashboardSectionFromSearch(window.location.search)}` : "/dashboard"
+          : `/${requestedPage}`;
+        setReturnPath(requestedPath);
         setAuthMode("login");
         setPage("auth");
-        window.history.replaceState({}, "", "/login?returnTo=%2Fdashboard");
+        window.history.replaceState({}, "", `/login?returnTo=${encodeURIComponent(requestedPath)}`);
         return;
       }
       setPage(requestedPage);
@@ -670,7 +708,7 @@ export default function App() {
   }, [authChecked, user]);
 
   useEffect(() => {
-    if (!authChecked || !user || page !== "dashboard") return undefined;
+    if (!authChecked || !user || !["dashboard", "tickets", "bookings"].includes(page)) return undefined;
     let active = true;
     async function checkSession() {
       try {
@@ -710,8 +748,8 @@ export default function App() {
   }, [authChecked, page, user?.id]);
 
   function openAuth(mode = "login") {
-    if (page === "dashboard" || window.location.pathname === "/dashboard") {
-      setReturnPath("/dashboard");
+    if (["dashboard", "tickets", "bookings"].includes(page)) {
+      setReturnPath(window.location.pathname === "/dashboard" ? "/dashboard" : window.location.pathname);
     } else {
       setReturnPath(null);
     }
@@ -722,25 +760,25 @@ export default function App() {
   function openMyBookings() {
     setDashboardSection("bookings");
     if (user) {
-      window.history.pushState({}, "", "/dashboard?section=bookings");
-      setPage("dashboard");
+      navigate("bookings");
       return;
     }
-    setReturnPath("/dashboard?section=bookings");
+    setReturnPath("/bookings");
     navigate("auth", "login");
   }
 
   function openMyTickets() {
-    setActiveNavigation("My Tickets");
     setDashboardSection("tickets");
     if (user) {
-      window.history.pushState({}, "", "/dashboard?section=tickets");
-      setPage("dashboard");
+      navigate("tickets");
       return;
     }
-    setReturnPath("/dashboard?section=tickets");
+    setReturnPath("/tickets");
     navigate("auth", "login");
   }
+
+  function openOffers() { navigate("offers"); window.scrollTo({ top: 0, behavior: "smooth" }); }
+  function openHelp() { navigate("help"); window.scrollTo({ top: 0, behavior: "smooth" }); }
 
   function goHome() {
     navigate("home");
@@ -772,7 +810,11 @@ export default function App() {
           description: `Welcome, ${nextUser.fullName}.`,
         });
     setReturnPath(null);
-    if (returnPath?.startsWith("/dashboard?section=")) {
+    if (returnPath === "/tickets" || returnPath === "/bookings") {
+      setDashboardSection(returnPath === "/tickets" ? "tickets" : "bookings");
+      window.history.pushState({}, "", returnPath);
+      setPage(returnPath.slice(1));
+    } else if (returnPath?.startsWith("/dashboard?section=")) {
       const section = dashboardSectionFromSearch(`?${returnPath.split("?")[1]}`);
       setDashboardSection(section);
       window.history.pushState({}, "", returnPath);
@@ -875,7 +917,7 @@ export default function App() {
   }
 
   return (
-    <div className={`app-shell${page === "results" ? " results-app" : ""}${page === "auth" ? " auth-app" : ""}${page === "dashboard" ? " dashboard-app" : ""}`} id="home">
+    <div className={`app-shell${page === "results" ? " results-app" : ""}${page === "auth" ? " auth-app" : ""}${["dashboard", "tickets", "bookings"].includes(page) ? " dashboard-app" : ""}`} id="home">
       {page === "home" ? (
         <section className="hero">
           <div className="hero-image-carousel" aria-hidden="true">
@@ -897,6 +939,9 @@ export default function App() {
             onHome={goHome}
             onTickets={openMyTickets}
             onBookings={openMyBookings}
+            onOffers={openOffers}
+            onHelp={openHelp}
+            page={page}
             onAuth={openAuth}
             user={user}
             onDashboard={() => navigate("dashboard")}
@@ -937,6 +982,9 @@ export default function App() {
             onHome={goHome}
             onTickets={openMyTickets}
             onBookings={openMyBookings}
+            onOffers={openOffers}
+            onHelp={openHelp}
+            page={page}
             onAuth={openAuth}
             user={user}
             onDashboard={() => navigate("dashboard")}
@@ -953,21 +1001,40 @@ export default function App() {
           onAuthenticated={handleAuthenticated}
           onAuthError={handleAuthError}
         />
-      ) : page === "dashboard" ? (
+      ) : ["dashboard", "tickets", "bookings"].includes(page) ? (
         authChecked && user ? (
           <UserDashboard
             user={user}
-            initialSection={dashboardSection}
+            initialSection={page === "tickets" ? "tickets" : page === "bookings" ? "bookings" : dashboardSection}
             onUserUpdate={(nextUser) => setUser((current) => ({ ...current, ...nextUser }))}
             onLogout={handleLogout}
             onAccountDeleted={handleAccountDeleted}
             onBrowseTrips={goHome}
             onToast={setToast}
             onUnreadCountChange={setUnreadCount}
+            onSectionNavigate={(section) => {
+              setDashboardSection(section);
+              const destination = section === "tickets" || section === "bookings" ? `/${section}` : section === "profile" ? "/dashboard" : `/dashboard?section=${encodeURIComponent(section)}`;
+              window.history.pushState({}, "", destination);
+              setPage(section === "tickets" || section === "bookings" ? section : "dashboard");
+            }}
           />
         ) : (
           <main className="dashboard-loading" role="status">Checking your secure account session…</main>
         )
+      ) : page === "offers" || page === "help" ? (
+        <InformationPage
+          page={page}
+          deals={homeContent.deals}
+          onHome={goHome}
+          onBookDeal={(deal) => {
+            setMode(deal.mode || "Bus");
+            setFrom(deal.from);
+            setTo(deal.to);
+            navigate("home");
+            window.setTimeout(() => document.getElementById("booking")?.scrollIntoView({ behavior: "smooth", block: "center" }), 0);
+          }}
+        />
       ) : page === "results" && searchQuery ? (
         <TicketSearchResults
           query={searchQuery}
@@ -1029,14 +1096,16 @@ export default function App() {
         onToast={setToast}
       />
       {page !== "auth" && page !== "dashboard" && (
+        <BottomNavigation
+          active={page === "tickets" ? "My Tickets" : page === "bookings" ? "Bookings" : page === "help" ? "Support" : ["home", "results"].includes(page) ? "Home" : null}
+          onHome={goHome}
+          onTickets={openMyTickets}
+          onBookings={openMyBookings}
+          onSupport={openHelp}
+        />
+      )}
+      {page !== "auth" && !["dashboard", "tickets", "bookings"].includes(page) && (
         <>
-          <BottomNavigation
-            active={activeNavigation}
-            setActive={setActiveNavigation}
-            onHome={goHome}
-            onTickets={openMyTickets}
-            onBookings={openMyBookings}
-          />
           <footer className="desktop-footer" id="support">
             <span>Travel a little easier with E-Ticketing.</span>
             <a href="mailto:support@eticketing.example">

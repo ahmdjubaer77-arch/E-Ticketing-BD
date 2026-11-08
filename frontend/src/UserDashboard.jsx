@@ -242,7 +242,7 @@ function MyBookings({ onBrowseTrips, ticketsOnly = false }) {
   );
 }
 
-export default function UserDashboard({ user, initialSection = "profile", onUserUpdate, onLogout, onAccountDeleted, onToast, onUnreadCountChange, onBrowseTrips }) {
+export default function UserDashboard({ user, initialSection = "profile", onUserUpdate, onLogout, onAccountDeleted, onToast, onUnreadCountChange, onBrowseTrips, onSectionNavigate }) {
   const [section, setSection] = useState(initialSection);
   const [loggingOut, setLoggingOut] = useState(false);
   const [logoutError, setLogoutError] = useState("");
@@ -504,6 +504,10 @@ export default function UserDashboard({ user, initialSection = "profile", onUser
               aria-current={section === id ? "page" : undefined}
               onClick={() => {
                 setSection(id);
+                if (onSectionNavigate) {
+                  onSectionNavigate(id);
+                  return;
+                }
                 const url = new URL(window.location.href);
                 if (id !== "profile") url.searchParams.set("section", id);
                 else url.searchParams.delete("section");
