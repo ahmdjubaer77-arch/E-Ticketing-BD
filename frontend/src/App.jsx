@@ -556,25 +556,75 @@ function InformationPage({ page, deals, onBookDeal, onHome }) {
 
 function BottomNavigation({ active, onHome, onTickets, onBookings, onSupport }) {
   const activeIndex = Math.max(0, navigation.findIndex(({ name }) => name === active));
-  const previousIndex = useRef(activeIndex);
-  const slideFromIndex = previousIndex.current;
-  previousIndex.current = activeIndex;
+  const [dragIndex, setDragIndex] = useState(null);
+  const navRef = useRef(null);
+  const dragRef = useRef(null);
+  const shownIndex = dragIndex ?? activeIndex;
+
+  useEffect(() => {
+    if (dragRef.current === null && dragIndex !== null && dragIndex === activeIndex) setDragIndex(null);
+  }, [activeIndex, dragIndex]);
+
+  function selectIndex(index) {
+    const name = navigation[index]?.name;
+    if (name === "Home") onHome();
+    if (name === "My Tickets") onTickets();
+    if (name === "Bookings") onBookings();
+    if (name === "Support") onSupport();
+  }
+
+  function startDragging(event) {
+    if (event.button !== undefined && event.button !== 0) return;
+    event.preventDefault();
+    const rect = navRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    dragRef.current = { pointerId: event.pointerId, startX: event.clientX, startIndex: activeIndex, currentIndex: activeIndex };
+    setDragIndex(activeIndex);
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function moveDragging(event) {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const rect = navRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const slotWidth = (rect.width - 10) / navigation.length;
+    const nextPosition = Math.max(0, Math.min(navigation.length - 1, drag.startIndex + (event.clientX - drag.startX) / slotWidth));
+    drag.currentIndex = Math.round(nextPosition);
+    setDragIndex(nextPosition);
+  }
+
+  function finishDragging(event, cancelled = false) {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    dragRef.current = null;
+    const index = drag.currentIndex;
+    if (!cancelled && index !== activeIndex) {
+      setDragIndex(index);
+      selectIndex(index);
+    } else {
+      setDragIndex(null);
+    }
+  }
 
   return (
-    <nav className="bottom-nav" aria-label="Quick navigation">
-      {active && <span key={active} className="bottom-nav-indicator" aria-hidden="true" style={{ "--active-index": activeIndex, "--slide-from-index": slideFromIndex }} />}
+    <nav ref={navRef} className="bottom-nav" aria-label="Quick navigation">
+      {active && <span
+        className={`bottom-nav-indicator${dragIndex !== null ? " dragging" : ""}`}
+        aria-hidden="true"
+        style={{ "--shown-index": shownIndex }}
+        onPointerDown={startDragging}
+        onPointerMove={moveDragging}
+        onPointerUp={finishDragging}
+        onPointerCancel={(event) => finishDragging(event, true)}
+      />}
       {navigation.map(({ name, Icon }) => (
         <button
           className={`bottom-nav-item${active === name ? " current" : ""}`}
           type="button"
           key={name}
           aria-current={active === name ? "page" : undefined}
-          onClick={() => {
-            if (name === "Home") onHome();
-            if (name === "My Tickets") onTickets();
-            if (name === "Bookings") onBookings();
-            if (name === "Support") onSupport();
-          }}
+          onClick={() => selectIndex(navigation.findIndex((item) => item.name === name))}
         >
           <Icon size={19} strokeWidth={active === name ? 2 : 1.7} />
           <span>{name}</span>
