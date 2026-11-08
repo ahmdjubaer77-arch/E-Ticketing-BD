@@ -555,9 +555,14 @@ function InformationPage({ page, deals, onBookDeal, onHome }) {
 }
 
 function BottomNavigation({ active, onHome, onTickets, onBookings, onSupport }) {
+  const activeIndex = Math.max(0, navigation.findIndex(({ name }) => name === active));
+  const previousIndex = useRef(activeIndex);
+  const slideFromIndex = previousIndex.current;
+  previousIndex.current = activeIndex;
+
   return (
-    <nav className="bottom-nav" aria-label="Quick navigation" style={{ "--active-index": Math.max(0, navigation.findIndex(({ name }) => name === active)) }}>
-      {active && <span className="bottom-nav-indicator" aria-hidden="true" />}
+    <nav className="bottom-nav" aria-label="Quick navigation">
+      {active && <span key={active} className="bottom-nav-indicator" aria-hidden="true" style={{ "--active-index": activeIndex, "--slide-from-index": slideFromIndex }} />}
       {navigation.map(({ name, Icon }) => (
         <button
           className={`bottom-nav-item${active === name ? " current" : ""}`}
