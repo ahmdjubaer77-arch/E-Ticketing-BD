@@ -31,6 +31,7 @@ import HotDealsSection from "./HotDealsSection.jsx";
 import DestinationShowcase from "./DestinationShowcase.jsx";
 import AuthPage from "./AuthPage.jsx";
 import UserDashboard from "./UserDashboard.jsx";
+import HelpPage from "./HelpPage.jsx";
 import NotificationDrawer from "./NotificationDrawer.jsx";
 import { apiRequest, authRequest, getAuthErrorMessage } from "./authApi.js";
 import { BANGLADESH_DISTRICTS } from "./bangladeshDistricts.js";
@@ -531,6 +532,7 @@ function Benefits() {
 }
 
 function InformationPage({ page, deals, onBookDeal, onHome }) {
+  if (page !== "offers") return <HelpPage />;
   if (page === "offers") return (
     <main className="information-page">
       <section className="information-hero"><span>TRAVEL MORE FOR LESS</span><h1>Offers for your next journey</h1><p>Explore current travel deals and book your next trip in a few easy steps.</p></section>

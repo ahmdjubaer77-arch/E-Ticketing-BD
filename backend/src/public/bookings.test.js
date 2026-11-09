@@ -51,6 +51,29 @@ test("validates a payment method and transaction ID before accepting customer pr
   assert.equal(values.transactionId, "TRX-1234_ab");
 });
 
+test("validates and normalizes one passenger per seat for ticket issuance", () => {
+  const { errors, values } = parsePaymentProofInput({
+    paymentMethodId: new mongoose.Types.ObjectId().toString(),
+    transactionId: "TRX-1234",
+    passengers: [
+      { seat: "A1", fullName: "  Ayesha   Rahman " },
+      { seat: "B1", fullName: "Karim Rahman" },
+    ],
+  });
+  assert.deepEqual(errors, {});
+  assert.deepEqual(values.passengers, [
+    { seatNumber: "A1", fullName: "Ayesha Rahman" },
+    { seatNumber: "B1", fullName: "Karim Rahman" },
+  ]);
+
+  const invalid = parsePaymentProofInput({
+    paymentMethodId: new mongoose.Types.ObjectId().toString(),
+    transactionId: "TRX-1234",
+    passengers: [{ seat: "A1", fullName: "A" }, { seat: "A1", fullName: "Second" }],
+  });
+  assert.ok(invalid.errors.passengers);
+});
+
 test("rejects malformed or unexpected payment proof fields", () => {
   const { errors } = parsePaymentProofInput({
     paymentMethodId: "not-an-id",

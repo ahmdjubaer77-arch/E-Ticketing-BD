@@ -1,5 +1,6 @@
 import { Router } from "express";
 import bcrypt from "bcrypt";
+import QRCode from "qrcode";
 import { rateLimit } from "express-rate-limit";
 import User from "../models/User.js";
 import Notification from "../models/Notification.js";
@@ -44,6 +45,11 @@ export function bookingStatusFilter(status) {
     return { status: { $in: ["confirmed", "completed"] }, paymentStatus: "paid" };
   }
   return status ? { status } : null;
+}
+
+function ticketVerificationUrl(config, ticketCode) {
+  const path = `/api/tickets/verify/${encodeURIComponent(ticketCode)}`;
+  return config?.clientUrl ? new URL(path, config.clientUrl).toString() : path;
 }
 
 async function recordSecurityNotification(userId, title, message) {
@@ -148,7 +154,7 @@ export function createUserRouter({ config, mailer }) {
         success: true,
         message: "Your bookings were retrieved.",
         data: {
-          bookings: bookings.map((booking) => ({
+          bookings: await Promise.all(bookings.map(async (booking) => ({
             id: booking._id.toString(),
             reference: booking.ticketCode,
             customerName: booking.customerName,
@@ -175,7 +181,22 @@ export function createUserRouter({ config, mailer }) {
                   booking.tickets?.find((ticket) => ticket.seatNumber === seatNumber)?.ticketCode
                   || `${booking.ticketCode}-${seatNumber}`)
               : [],
-          })),
+            ticketPassengerNames: ["confirmed", "completed"].includes(booking.status) && booking.paymentStatus === "paid"
+              ? booking.seatNumbers.map((seatNumber) =>
+                  booking.tickets?.find((ticket) => ticket.seatNumber === seatNumber)?.passengerName
+                  || booking.customerName)
+              : [],
+            ticketQrCodes: ["confirmed", "completed"].includes(booking.status) && booking.paymentStatus === "paid"
+              ? await Promise.all(booking.seatNumbers.map((seatNumber) => {
+                  const ticket = booking.tickets?.find((item) => item.seatNumber === seatNumber);
+                  return QRCode.toDataURL(ticketVerificationUrl(config, ticket?.ticketCode || `${booking.ticketCode}-${seatNumber}`), {
+                    errorCorrectionLevel: "H",
+                    margin: 1,
+                    width: 220,
+                  });
+                }))
+              : [],
+          }))),
           pagination: {
             page,
             limit,

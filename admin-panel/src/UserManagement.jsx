@@ -84,7 +84,7 @@ function UserStatus({ status }) {
 function userFromApi(record, index = 0) {
   const createdAt = record.createdAt ? new Date(record.createdAt) : new Date();
   return {
-    id: record.id,
+    id: String(record.id || record._id || record.email),
     name: record.fullName,
     email: record.email,
     phone: record.phone || "",
@@ -473,7 +473,7 @@ export default function UserManagement({ users, setUsers, query, onQueryChange, 
         <div className="users-table-scroll">
           <table className="users-table">
             <thead><tr><th className="users-checkbox-column"><input type="checkbox" checked={pageIsSelected} onChange={(event) => changePageSelection(event.target.checked)} aria-label="Select all users on this page" /></th><th>USER ID</th><th>USER</th><th>EMAIL ADDRESS</th><th>PHONE NUMBER</th><th>REGISTERED</th><th>STATUS</th><th><span className="users-sr-only">Actions</span></th></tr></thead>
-            <tbody>{pageUsers.map((user) => <tr key={user.id}>
+            <tbody>{pageUsers.map((user) => <tr key={user.id || user.email}>
               <td className="users-checkbox-column"><input type="checkbox" checked={selectedIds.includes(user.id)} disabled={user.role === "admin"} onChange={(event) => setSelectedIds((current) => event.target.checked ? [...current, user.id] : current.filter((id) => id !== user.id))} aria-label={`Select ${user.name}`} /></td>
               <td><button className="users-id-link" type="button" onClick={() => rowAction("view", user)}>{user.id}</button></td>
               <td><button className="users-person-cell" type="button" onClick={() => rowAction("view", user)}><Avatar user={user} /><strong>{user.name}</strong></button></td>

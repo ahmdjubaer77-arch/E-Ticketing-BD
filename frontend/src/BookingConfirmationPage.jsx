@@ -17,7 +17,7 @@ import {
   UsersRound,
   X,
 } from "lucide-react";
-import { apiRequest } from "./authApi.js";
+import { apiRequest, downloadApiFile } from "./authApi.js";
 import "./booking-confirmation.css";
 
 function formatJourneyDate(date) {
@@ -61,33 +61,6 @@ function getBookingDetails(response) {
     isExpired: booking.status === "expired" || booking.status === "cancelled",
     isProofRejected: booking.paymentProof?.reviewStatus === "rejected",
   };
-}
-
-function makeTicketText(draft, confirmation) {
-  const { query, schedule, selectedSeats, passengers, contact } = draft;
-  const { reference, payment } = confirmation;
-  const amount = confirmation.amount;
-  const lines = [
-    `E-TICKETING — ${confirmation.isPaid ? "CONFIRMED E-TICKET" : "PENDING SEAT RESERVATION"}`,
-    `Booking reference: ${reference}`,
-    `Payment status: ${payment.status}`,
-    `Payment reference: ${payment.reference || payment.transactionId || "Not provided"}`,
-    `${confirmation.isPaid ? "Total paid" : "Total payable"}: BDT ${amount.toLocaleString("en-BD")}`,
-    "",
-    `Journey: ${query.from} to ${query.to}`,
-    `Date: ${formatJourneyDate(query.date)}`,
-    `Departure: ${formatClock(schedule.departure)}`,
-    `Operator: ${schedule.operator}`,
-    `Seats: ${selectedSeats.join(", ")}`,
-    "",
-    "Passengers:",
-    ...passengers.map((passenger) => `${passenger.fullName} — Seat ${passenger.seat}`),
-    "",
-    `Contact: ${contact.fullName}`,
-    `Mobile: ${contact.mobile}`,
-    `Email: ${contact.email}`,
-  ];
-  return lines.join("\r\n");
 }
 
 function BookingTicket({ draft, confirmation, onClose }) {
@@ -148,6 +121,7 @@ export default function BookingConfirmationPage({
   const [liveBooking, setLiveBooking] = useState(bookingResponse?.booking || null);
   const [now, setNow] = useState(Date.now());
   const [statusRefreshError, setStatusRefreshError] = useState("");
+  const [ticketDownloadError, setTicketDownloadError] = useState("");
 
   useEffect(() => {
     setLiveBooking(bookingResponse?.booking || null);
@@ -192,19 +166,18 @@ export default function BookingConfirmationPage({
     ? ""
     : `${Math.floor(remainingMs / 60_000)}:${String(Math.floor(remainingMs % 60_000 / 1000)).padStart(2, "0")}`;
 
-  function downloadTicket() {
+  async function downloadTicket(ticketCode, seatNumber) {
     if (!confirmation?.isPaid) return;
-    const blob = new Blob([makeTicketText(draft, confirmation)], {
-      type: "text/plain;charset=utf-8",
-    });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `ticket-${confirmation.reference}.txt`;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    setTicketDownloadError("");
+    try {
+      const accessToken = confirmation.booking.accessToken || bookingResponse?.booking?.accessToken;
+      await downloadApiFile(`/tickets/${encodeURIComponent(ticketCode)}/pdf`, {
+        headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
+        filename: `e-ticket-${seatNumber}-${ticketCode}.pdf`,
+      });
+    } catch (error) {
+      setTicketDownloadError(error.message || "The e-ticket PDF could not be downloaded.");
+    }
   }
 
   const { query, schedule, selectedSeats, passengers, contact, totalFare } = draft;
@@ -332,15 +305,20 @@ export default function BookingConfirmationPage({
               >
                 <Ticket size={16} /> View My Ticket
               </button>
-              <button
-                type="button"
-                className="confirmation-download-button"
-                disabled={!confirmation?.isPaid}
-                onClick={downloadTicket}
-              >
-                <Download size={16} /> Download Ticket
-              </button>
-              {!confirmation?.isPaid && <small>Tickets become valid after admin marks payment Paid.</small>}
+              {confirmation?.booking.ticketCodes?.length > 0
+                ? confirmation.booking.ticketCodes.map((ticketCode, index) => (
+                  <button
+                    type="button"
+                    className="confirmation-download-button"
+                    disabled={!confirmation?.isPaid}
+                    key={ticketCode}
+                    onClick={() => downloadTicket(ticketCode, selectedSeats[index] || `ticket-${index + 1}`)}
+                  >
+                    <Download size={16} /> Download PDF · Seat {selectedSeats[index] || index + 1}
+                  </button>
+                ))
+                : <small>{confirmation?.isPaid ? "Your ticket files are being prepared. Refresh in a moment." : "Tickets become valid after admin marks payment Paid."}</small>}
+              {ticketDownloadError && <small role="alert">{ticketDownloadError}</small>}
             </div>
           </aside>
         </div>

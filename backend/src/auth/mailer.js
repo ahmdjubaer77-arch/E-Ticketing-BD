@@ -60,5 +60,42 @@ export function createMailer(config) {
     });
   }
 
-  return { sendOtp };
+  async function sendBookingConfirmation({ booking, ticketCodes }) {
+    const safe = (value) => escapeHtml(String(value ?? ""));
+    const seats = booking.seatNumbers.map(safe).join(", ");
+    const codes = ticketCodes.map(safe).join(", ");
+    const journeyDate = new Intl.DateTimeFormat("en-BD", {
+      dateStyle: "full",
+      timeStyle: "short",
+      timeZone: "Asia/Dhaka",
+    }).format(new Date(booking.departureAt));
+    const route = `${safe(booking.departure)} to ${safe(booking.destination)}`;
+    const result = await transporter.sendMail({
+      from: { name: config.smtpFromName, address: config.smtpFromEmail },
+      to: booking.customerEmail,
+      subject: "Your E-Ticket Booking Is Confirmed!",
+      text: `Hello ${booking.customerName || "traveller"}. Your booking ${booking._id} from ${booking.departure} to ${booking.destination} is confirmed. Journey: ${journeyDate}. Seats: ${booking.seatNumbers.join(", ")}. Ticket IDs: ${ticketCodes.join(", ")}. Total fare: ${booking.farePerSeat * booking.seatNumbers.length}.`,
+      html: `<!doctype html><html lang="en"><body style="margin:0;background:#f7f8f5;font-family:Arial,sans-serif;color:#17211e"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="padding:28px 12px"><tr><td align="center"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:560px;background:#fff;border:1px solid #e5e9e6;border-radius:14px"><tr><td style="padding:22px 26px;background:#064e3b;color:#fff;font-size:19px;font-weight:bold">E-Ticketing</td></tr><tr><td style="padding:26px"><h1 style="margin:0 0 10px;font-size:22px">Booking confirmed</h1><p>Hello ${safe(booking.customerName || "traveller")}, your payment was approved and your ticket is ready.</p><p><strong>Booking ID:</strong> ${safe(booking._id)}<br><strong>Journey:</strong> ${route}<br><strong>Date:</strong> ${safe(journeyDate)}<br><strong>Departure:</strong> ${safe(booking.operatorName)} · ${safe(booking.transport)}<br><strong>Seats:</strong> ${seats}<br><strong>Total fare:</strong> ৳${safe(booking.farePerSeat * booking.seatNumbers.length)}<br><strong>Ticket ID${ticketCodes.length === 1 ? "" : "s"}:</strong> ${codes}</p></td></tr></table></td></tr></table></body></html>`,
+    });
+    if (!result.accepted?.length || result.rejected?.length) {
+      const error = new Error("The SMTP server did not accept the booking recipient.");
+      error.code = "SMTP_RECIPIENT_REJECTED";
+      throw error;
+    }
+    return { accepted: result.accepted };
+  }
+
+  async function sendSupportRequest({ name, email, bookingReference, topic, message }) {
+    const safe = (value) => escapeHtml(String(value ?? ""));
+    await transporter.sendMail({
+      from: { name: config.smtpFromName, address: config.smtpFromEmail },
+      to: config.supportEmail || config.smtpUser,
+      replyTo: { name, address: email },
+      subject: `[Support] ${topic}${bookingReference ? ` · ${bookingReference}` : ""}`,
+      text: `Support request from ${name} <${email}>\nTopic: ${topic}\nBooking reference: ${bookingReference || "Not provided"}\n\n${message}`,
+      html: `<!doctype html><html lang="en"><body style="font-family:Arial,sans-serif;color:#17211e"><h2>New support request</h2><p><strong>From:</strong> ${safe(name)} &lt;${safe(email)}&gt;</p><p><strong>Topic:</strong> ${safe(topic)}<br><strong>Booking reference:</strong> ${safe(bookingReference || "Not provided")}</p><p style="white-space:pre-wrap">${safe(message)}</p></body></html>`,
+    });
+  }
+
+  return { sendOtp, sendBookingConfirmation, sendSupportRequest, verify: () => transporter.verify() };
 }

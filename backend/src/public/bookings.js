@@ -3,10 +3,12 @@ import { Router } from "express";
 import mongoose from "mongoose";
 import { rateLimit } from "express-rate-limit";
 import Booking from "../models/Booking.js";
+import User from "../models/User.js";
 import PaymentMethod from "../models/PaymentMethod.js";
 import Schedule from "../models/Schedule.js";
 import { expirePendingBookings } from "../bookings/expiration.js";
 import { detectImageContentType } from "../media/cloudinary.js";
+import { createAuthMiddleware } from "../auth/middleware.js";
 
 const seatPattern = /^[A-D]\d{1,3}$/;
 const holdDurationMs = 3 * 60 * 1000;
@@ -53,7 +55,7 @@ export function parsePaymentProofInput(body) {
   if (!body || typeof body !== "object" || Array.isArray(body)) {
     return { errors: { body: "A JSON object is required." }, values: {} };
   }
-  const allowedFields = ["paymentMethodId", "transactionId", "customerName", "customerEmail", "customerPhone"];
+  const allowedFields = ["paymentMethodId", "transactionId", "customerName", "customerEmail", "customerPhone", "passengers"];
   const unsupported = Object.keys(body).filter((key) => !allowedFields.includes(key));
   if (unsupported.length) errors.body = `Unsupported fields: ${unsupported.join(", ")}.`;
   const values = {
@@ -62,6 +64,10 @@ export function parsePaymentProofInput(body) {
     customerName: typeof body.customerName === "string" ? body.customerName.trim().replace(/\s+/g, " ") : "",
     customerEmail: typeof body.customerEmail === "string" ? body.customerEmail.trim().toLowerCase() : "",
     customerPhone: typeof body.customerPhone === "string" ? body.customerPhone.trim() : "",
+    passengers: Array.isArray(body.passengers) ? body.passengers.map((passenger) => ({
+      seatNumber: typeof passenger?.seat === "string" ? passenger.seat.trim() : "",
+      fullName: typeof passenger?.fullName === "string" ? passenger.fullName.trim().replace(/\s+/g, " ") : "",
+    })) : [],
   };
   if (!mongoose.isObjectIdOrHexString(values.paymentMethodId)) errors.paymentMethodId = "Choose an available payment method.";
   if (!/^[A-Za-z0-9_-]{4,100}$/.test(values.transactionId)) {
@@ -77,6 +83,15 @@ export function parsePaymentProofInput(body) {
   if (Object.hasOwn(body, "customerPhone")
     && (values.customerPhone.length > 24 || !/^\+?[0-9\s()-]{7,24}$/.test(values.customerPhone))) {
     errors.customerPhone = "Enter a valid phone number.";
+  }
+  if (Object.hasOwn(body, "passengers")) {
+    if (!Array.isArray(body.passengers) || body.passengers.length < 1 || body.passengers.length > 10) {
+      errors.passengers = "Provide passenger details for each reserved seat.";
+    } else if (values.passengers.some((passenger) => !seatPattern.test(passenger.seatNumber)
+      || passenger.fullName.length < 2 || passenger.fullName.length > 100)
+      || new Set(values.passengers.map((passenger) => passenger.seatNumber)).size !== values.passengers.length) {
+      errors.passengers = "Each passenger needs a unique valid seat and a name between 2 and 100 characters.";
+    }
   }
   return { errors, values };
 }
@@ -130,6 +145,8 @@ function publicBookingResponse(booking) {
     status: booking.status,
     expiresAt: booking.expiresAt,
     ticketCodes: booking.tickets.map((ticket) => ticket.ticketCode),
+    ticketPassengerNames: booking.seatNumbers.map((seatNumber) =>
+      booking.tickets.find((ticket) => ticket.seatNumber === seatNumber)?.passengerName || booking.customerName),
   };
 }
 
@@ -158,8 +175,9 @@ async function findBookingForAccessToken(id, accessToken) {
   return booking;
 }
 
-export function createPublicBookingsRouter() {
+export function createPublicBookingsRouter(config) {
   const router = Router();
+  const { optionalAuth } = createAuthMiddleware(config);
   const createLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     limit: 30,
@@ -174,6 +192,8 @@ export function createPublicBookingsRouter() {
     legacyHeaders: false,
     message: { success: false, message: "Too many payment proof attempts. Please try again later." },
   });
+
+  router.use(optionalAuth);
 
   router.post("/hold", createLimiter, async (request, response, next) => {
     let reservedSeatCount = 0;
@@ -191,6 +211,9 @@ export function createPublicBookingsRouter() {
         existingBooking = await findBookingForAccessToken(bookingId, accessToken);
         if (!existingBooking || existingBooking.scheduleId.toString() !== requestedScheduleId) {
           return response.status(401).json({ success: false, message: "Seat reservation is unavailable. Refresh and select again." });
+        }
+        if (request.user && existingBooking.bookedBy && !existingBooking.bookedBy.equals(request.user._id)) {
+          return response.status(403).json({ success: false, message: "This reservation belongs to another account." });
         }
         if (
           existingBooking.status !== "pending"
@@ -318,6 +341,7 @@ export function createPublicBookingsRouter() {
         status: "pending",
         paymentStatus: "pending",
         expiresAt: new Date(now.getTime() + holdDurationMs),
+        bookedBy: request.user?._id || null,
         publicAccessTokenHash: hashAccessToken(newAccessToken).toString("hex"),
         ticketCode: ticketCode(),
         tickets: [{ seatNumber, ticketCode: ticketCode(), status: "active" }],
@@ -420,12 +444,30 @@ export function createPublicBookingsRouter() {
       const booking = await findBookingForAccessToken(request.params.id, accessToken);
       if (!booking) return response.status(401).json({ success: false, message: "Booking status is unavailable." });
       const isImageUpload = Buffer.isBuffer(request.body);
-      const proofBody = isImageUpload ? {
+      let imagePassengerDetails;
+      let imageProofDetails;
+      const encodedProofDetails = request.get("x-payment-details");
+      if (isImageUpload && encodedProofDetails && encodedProofDetails.length <= 16_000) {
+        try {
+          imageProofDetails = JSON.parse(Buffer.from(encodedProofDetails, "base64url").toString("utf8"));
+        } catch {
+          imageProofDetails = null;
+        }
+      }
+      if (isImageUpload && request.get("x-passengers")) {
+        try {
+          imagePassengerDetails = JSON.parse(request.get("x-passengers"));
+        } catch {
+          imagePassengerDetails = null;
+        }
+      }
+      const proofBody = isImageUpload ? imageProofDetails || {
         paymentMethodId: request.get("x-payment-method-id"),
         transactionId: request.get("x-transaction-id"),
         customerName: request.get("x-customer-name"),
         customerEmail: request.get("x-customer-email"),
         customerPhone: request.get("x-customer-phone"),
+        ...(request.get("x-passengers") ? { passengers: imagePassengerDetails } : {}),
       } : request.body;
       const { errors, values } = parsePaymentProofInput(proofBody);
       if (Object.keys(errors).length) {
@@ -446,6 +488,15 @@ export function createPublicBookingsRouter() {
           },
         });
       }
+      if (request.user && values.customerEmail !== request.user.email.toLowerCase()) {
+        return response.status(403).json({ success: false, message: "Use the email address on your signed-in account to link this booking." });
+      }
+      if (booking.bookedBy && (!request.user || !booking.bookedBy.equals(request.user._id))) {
+        return response.status(403).json({ success: false, message: "Sign in to the account that reserved this seat to submit payment proof." });
+      }
+      if (!request.user && await User.exists({ email: values.customerEmail, isActive: true, isEmailVerified: true })) {
+        return response.status(401).json({ success: false, message: "Sign in to the account for this email before submitting payment proof." });
+      }
       if (booking.paymentProof?.reviewStatus === "submitted" || booking.paymentProof?.reviewStatus === "approved") {
         if (
           booking.paymentProof.paymentMethodId.toString() === values.paymentMethodId
@@ -461,6 +512,17 @@ export function createPublicBookingsRouter() {
       }
       if (booking.status !== "pending" || booking.paymentStatus !== "pending" || !booking.expiresAt || booking.expiresAt <= new Date()) {
         return response.status(409).json({ success: false, message: "This reservation is no longer active. Start a new booking to submit payment proof." });
+      }
+      const passengerDetails = values.passengers.length
+        ? values.passengers
+        : booking.seatNumbers.map((seatNumber) => ({ seatNumber, fullName: values.customerName }));
+      if (passengerDetails.length !== booking.seatNumbers.length
+        || passengerDetails.some((passenger) => !booking.seatNumbers.includes(passenger.seatNumber))) {
+        return response.status(400).json({
+          success: false,
+          message: "Provide exactly one passenger name for every reserved seat.",
+          errors: { passengers: "Passenger seats must match the reserved seats." },
+        });
       }
       const method = await PaymentMethod.findOne({ _id: values.paymentMethodId, status: "active" }).lean();
       if (!method) return response.status(400).json({ success: false, message: "This payment method is no longer available. Refresh and choose another." });
@@ -492,6 +554,11 @@ export function createPublicBookingsRouter() {
       booking.customerName = values.customerName;
       booking.customerEmail = values.customerEmail;
       booking.customerPhone = values.customerPhone;
+      const passengerNames = new Map(passengerDetails.map((passenger) => [passenger.seatNumber, passenger.fullName]));
+      for (const ticket of booking.tickets) {
+        ticket.passengerName = passengerNames.get(ticket.seatNumber) || values.customerName;
+      }
+      if (request.user) booking.bookedBy = request.user._id;
       booking.expiresAt = null;
       await booking.save();
       return response.status(201).json({
@@ -512,6 +579,9 @@ export function createPublicBookingsRouter() {
       const { errors, values } = parsePublicBookingInput(request.body);
       if (Object.keys(errors).length) {
         return response.status(400).json({ success: false, message: "Please correct your booking details.", errors });
+      }
+      if (request.user && values.customerEmail !== request.user.email.toLowerCase()) {
+        return response.status(403).json({ success: false, message: "Use the email address on your signed-in account to create this booking." });
       }
 
       scheduleId = values.scheduleId;
@@ -567,6 +637,7 @@ export function createPublicBookingsRouter() {
         seatNumbers: values.seatNumbers,
         status: "pending",
         paymentStatus: "pending",
+        bookedBy: request.user?._id || null,
         expiresAt: new Date(now.getTime() + holdDurationMs),
         publicAccessTokenHash: hashAccessToken(accessToken).toString("hex"),
         ticketCode: ticketCode(),

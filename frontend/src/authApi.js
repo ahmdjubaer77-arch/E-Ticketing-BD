@@ -2,6 +2,27 @@ const apiBaseUrl = import.meta.env.PROD
   ? ""
   : (import.meta.env.VITE_API_BASE_URL || "").replace(/\/+$/, "");
 
+export async function downloadApiFile(path, { headers, filename } = {}) {
+  const response = await fetch(`${apiBaseUrl}/api${path}`, {
+    credentials: "include",
+    headers,
+  });
+  if (!response.ok) {
+    const result = await response.json().catch(() => ({}));
+    throw new Error(result.message || "The file could not be downloaded.");
+  }
+  const blob = await response.blob();
+  const responseFilename = /filename="?([^";]+)"?/i.exec(response.headers.get("content-disposition") || "")?.[1];
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename || responseFilename || "download.pdf";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 export async function apiRequest(path, { method = "GET", body, headers, signal } = {}) {
   let response;
   try {

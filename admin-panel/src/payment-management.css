@@ -70,10 +70,58 @@
 .payment-method-list article > div:last-child { display: flex; flex: 0 0 auto; gap: 5px; }
 .payment-method-list article > div:last-child button { min-height: 27px; padding: 0 7px; font-size: 8px; }
 .payment-methods-empty { margin: 0; padding: 24px; color: #87918b; border: 1px dashed #dfe7e1; border-radius: 9px; font-size: 10px; text-align: center; }
+
+.passenger-lookup { margin: 0 0 18px; padding: 16px; border: 1px solid #dcebe2; border-radius: 12px; background: linear-gradient(135deg, #f8fcf9, #f1f8f3); }
+.passenger-lookup > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 13px; color: #087857; }
+.passenger-lookup > header > div > span { color: #0a8661; font-size: 8px; font-weight: 800; letter-spacing: .7px; }
+.passenger-lookup > header h2 { margin: 4px 0; color: #263a2f; font-size: 15px; }
+.passenger-lookup > header p { margin: 0; color: #75837a; font-size: 10px; }
+.passenger-lookup > form > label { display: flex; min-height: 42px; align-items: center; gap: 9px; padding: 4px 5px 4px 12px; color: #829087; border: 1px solid #dfe8e2; border-radius: 9px; background: #fff; }
+.passenger-lookup > form > label:focus-within { border-color: #44a37c; box-shadow: 0 0 0 3px rgba(8, 121, 88, .08); }
+.passenger-lookup > form input { flex: 1; min-width: 0; border: 0; outline: 0; color: #34453a; background: transparent; font: inherit; font-size: 11px; }
+.passenger-lookup > form input::placeholder { color: #9aa49e; }
+.passenger-lookup > form button { display: inline-flex; min-height: 32px; flex: 0 0 auto; align-items: center; justify-content: center; gap: 6px; padding: 0 11px; color: #fff; border: 0; border-radius: 7px; background: #087857; cursor: pointer; font: inherit; font-size: 9px; font-weight: 750; }
+.passenger-lookup > form button:disabled { opacity: .65; cursor: wait; }
+.passenger-lookup-message,.passenger-lookup-empty { margin: 10px 0 0; color: #9b5144; font-size: 10px; }
+.passenger-lookup-empty { padding: 12px; color: #75837a; border: 1px dashed #dce7df; border-radius: 8px; text-align: center; }
+.passenger-lookup-results { display: grid; gap: 9px; margin-top: 12px; }
+.passenger-result-card { overflow: hidden; border: 1px solid #e0e9e3; border-radius: 10px; background: #fff; }
+.passenger-result-card > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; padding: 11px 12px; border-bottom: 1px solid #edf1ee; }
+.passenger-result-card > header > div { display: grid; gap: 3px; min-width: 0; }
+.passenger-result-card > header strong { overflow: hidden; color: #2c4034; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.passenger-result-card > header span,.passenger-result-card > header > small { color: #7d8b82; font-size: 9px; }
+.passenger-result-card > header span { overflow-wrap: anywhere; }
+.passenger-result-card > header > small { flex: 0 0 auto; }
+.passenger-result-journey { display: grid; gap: 3px; padding: 10px 12px; background: #fbfdfb; }
+.passenger-result-journey > strong { color: #33483a; font-size: 10px; }
+.passenger-result-journey > strong span { padding: 0 4px; color: #0c8a63; }
+.passenger-result-journey > small { color: #839087; font-size: 8px; }
+.passenger-ticket-list { display: grid; gap: 5px; padding: 9px 12px; }
+.passenger-ticket-list > div { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 8px; border: 1px solid #edf1ee; border-radius: 7px; background: #fcfdfc; }
+.passenger-ticket-list > div > span { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.passenger-ticket-list strong { overflow: hidden; color: #405349; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.passenger-ticket-list small { color: #77867d; font-size: 8px; white-space: nowrap; }
+.passenger-ticket-list code { overflow: hidden; color: #486452; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.passenger-proof-detail { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-top: 1px solid #eaf0eb; background: #f8fbf9; }
+.passenger-proof-detail > div:first-child { display: grid; flex: 1; gap: 4px; min-width: 0; }
+.passenger-proof-eyebrow { color: #0a8661; font-size: 8px; font-weight: 800; letter-spacing: .45px; }
+.passenger-proof-detail > div:first-child > strong { overflow: hidden; color: #3b4c41; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.passenger-proof-detail > div:first-child > small { color: #79877e; font-size: 8px; }
+.passenger-proof-image { display: grid; flex: 0 0 auto; justify-items: center; gap: 3px; color: #087857; text-decoration: none; }
+.passenger-proof-image img { width: 48px; height: 38px; object-fit: cover; border: 1px solid #dfe8e2; border-radius: 5px; background: #fff; }
+.passenger-proof-image span { display: inline-flex; align-items: center; gap: 3px; font-size: 8px; font-weight: 700; }
+.passenger-proof-status { display: grid; flex: 0 0 auto; gap: 4px; color: #33483a; font-size: 9px; font-weight: 750; text-align: right; }
+.passenger-proof-status select { min-width: 86px; height: 29px; padding: 0 6px; color: #47554d; border: 1px solid #dfe7e1; border-radius: 6px; background: #fff; font: inherit; font-size: 8px; text-transform: capitalize; }
+.passenger-proof-status select:disabled { color: #929b96; background: #f0f3f0; }
+
 @media (max-width: 700px) {
   .payment-management-stats { grid-template-columns: repeat(2,minmax(0,1fr)); }
   .payment-management-heading { align-items: flex-start; }
   .payment-management-table-card > header { align-items: flex-start; flex-direction: column; }
   .payment-methods-layout { grid-template-columns: 1fr; }
   .payment-method-list article { align-items: flex-start; flex-direction: column; }
+  .passenger-lookup { padding: 12px; }
+  .passenger-proof-detail { align-items: flex-start; flex-wrap: wrap; }
+  .passenger-proof-detail > div:first-child { flex-basis: calc(100% - 70px); }
+  .passenger-proof-status { margin-left: auto; }
 }

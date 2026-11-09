@@ -67,6 +67,7 @@ export function loadConfig(env = process.env) {
     smtpPass: env.SMTP_PASS,
     smtpFromEmail: env.SMTP_FROM_EMAIL,
     smtpFromName: env.SMTP_FROM_NAME || "E-Ticketing",
+    supportEmail: env.SUPPORT_EMAIL?.trim() || env.SMTP_USER,
     clientUrl: parsedClientUrl,
     adminClientUrl,
     cloudinary: cloudinaryConfigured

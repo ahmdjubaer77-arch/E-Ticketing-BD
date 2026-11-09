@@ -19,6 +19,7 @@ test("validates and normalizes admin booking details", () => {
   assert.deepEqual(values.seatNumbers, ["A1", "B1"]);
 });
 
+
 test("rejects malformed, duplicate, or excessive seat selections", () => {
   for (const seatNumbers of [["A1", "A1"], ["E1"], [], Array.from({ length: 11 }, (_, i) => `A${i + 1}`)]) {
     const { errors } = parseAdminBookingInput({ ...validInput, seatNumbers });

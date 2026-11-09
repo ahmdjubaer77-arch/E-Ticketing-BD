@@ -21,6 +21,7 @@ SMTP_USER=<smtp-account>
 SMTP_PASS=<smtp-password-or-app-password>
 SMTP_FROM_EMAIL=<verified-sender-address>
 SMTP_FROM_NAME=E-Ticketing
+SUPPORT_EMAIL=<support-inbox>
 CLIENT_URL=http://localhost:5173
 ADMIN_CLIENT_URL=http://localhost:5174
 CLOUDINARY_CLOUD_NAME=<cloud-name>
@@ -30,6 +31,8 @@ NODE_ENV=development
 ```
 
 Keep `.env` private; only the placeholder `.env.example` belongs in source control. Configure all three Cloudinary values locally to enable image uploads; they are optional at startup, but upload requests return an explicit service-unavailable error until configured. Never expose the API secret to either browser app. For production, use HTTPS for both client origins, a strong unique `JWT_SECRET`, and `SMTP_SECURE=true` when the SMTP provider requires implicit TLS (commonly port 465).
+
+The public Help page submits support requests through `POST /api/public/support`. Set `SUPPORT_EMAIL` to the inbox monitored by your team; when omitted, support requests are delivered to `SMTP_USER`. Requests are rate-limited and the customer email is set as reply-to.
 
 Run the API from `backend`:
 
@@ -43,6 +46,8 @@ Run the customer frontend with `npm run dev` from `frontend` and the admin panel
 For production, route `/api/*` from each static frontend to the backend (the Vercel projects use the included `vercel.json` rewrite; for a Render Static Site, add an `/api/*` rewrite to `https://<backend-service>.onrender.com/api/*`). Set the backend `CLIENT_URL` and `ADMIN_CLIENT_URL` environment variables to the exact HTTPS origins of the customer and admin sites, respectively, then redeploy the backend. Production CORS allows only those configured origins; it does not allow arbitrary Render or localhost origins.
 
 To securely provision the first administrator after MongoDB is reachable, run `npm run admin:create -- admin@example.com` from `backend`. The command refuses to modify any existing account, creates a verified admin with a random one-time password, and prints that password once after successful creation. To promote an existing active, verified account without changing its password, run `npm run admin:promote -- account@example.com`. If that account needs a new password as well, run `npm run admin:setup -- account@example.com`; it changes the role, replaces the password with a random temporary one, revokes existing sessions, and prints the password only after the database update succeeds. Use these commands only for accounts you control.
+
+Ticket PDF downloads use the existing HttpOnly JWT session, or the booking's bearer token on the confirmation page, and validate access on the server. QR codes contain only a public verification URL; verification responses omit passenger name, email, and phone. PDF fields are read directly from the booking and per-seat ticket records, including the passenger names submitted at checkout. The booking contact phone is printed on each ticket; NID is not collected by the app.
 
 ### Gmail SMTP
 
@@ -67,6 +72,9 @@ To securely provision the first administrator after MongoDB is reachable, run `n
 | GET | `/api/auth/admin` | Example role-protected administrator endpoint |
 | GET | `/api/public/home` | Return active route cards, destination starting fares, and route locations for the customer homepage |
 | GET | `/api/public/schedules/:id/seats` | Return live booked/held seats for a bus schedule |
+| GET | `/api/tickets/:ticketId` | Read an owned ticket's live passenger, trip, seat, and verification status |
+| GET | `/api/tickets/:ticketId/pdf` | Download an owned, paid ticket as a server-generated landscape PDF |
+| GET | `/api/tickets/verify/:ticketId` | Publicly verify a QR ticket ID without exposing passenger contact details |
 | GET | `/api/public/payment-methods` | Return currently active payment methods and account instructions |
 | POST | `/api/public/bookings/hold` | Hold a seat immediately for three minutes; send the booking bearer token to add more seats to the same hold |
 | DELETE | `/api/public/bookings/:id/seats/:seatNumber` | Release one seat from the customer's active hold using its bearer token |

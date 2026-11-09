@@ -8,6 +8,8 @@ import { createNotificationRouter, createUserRouter } from "./users/routes.js";
 import { createPublicHomeRouter } from "./public/home.js";
 import { createPublicBookingsRouter } from "./public/bookings.js";
 import { createPublicPaymentMethodsRouter } from "./public/payment-methods.js";
+import { createTicketRouter } from "./tickets/routes.js";
+import { createPublicSupportRouter } from "./public/support.js";
 
 export function isAllowedOrigin(origin, config) {
   const allowedOrigins = new Set([config.clientUrl, config.adminClientUrl].filter(Boolean));
@@ -63,10 +65,12 @@ export function createApp({ config, mailer }) {
   app.use("/api/users", createUserRouter({ config, mailer }));
   app.use("/api/notifications", createNotificationRouter(config));
   app.use("/api/auth", createAuthRouter({ config, mailer }));
+  app.use("/api/tickets", createTicketRouter(config));
+  app.use("/api/public/support", createPublicSupportRouter({ config, mailer }));
   app.use("/api/public", createPublicHomeRouter());
   app.use("/api/public/payment-methods", createPublicPaymentMethodsRouter());
-  app.use("/api/public/bookings", createPublicBookingsRouter());
-  app.use("/api/admin", createAdminRouter(config));
+  app.use("/api/public/bookings", createPublicBookingsRouter(config));
+  app.use("/api/admin", createAdminRouter(config, mailer));
   app.use("/api", (_request, response) => {
     response.status(404).json({ success: false, message: "API endpoint not found." });
   });

@@ -14,6 +14,13 @@ import {
 import { apiRequest } from "./authApi.js";
 import "./payment.css";
 
+function encodeHeaderJson(value) {
+  const bytes = new TextEncoder().encode(JSON.stringify(value));
+  let binary = "";
+  bytes.forEach((byte) => { binary += String.fromCharCode(byte); });
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
 function formatJourneyDate(date) {
   if (!date) return "Date not selected";
   return new Intl.DateTimeFormat("en-BD", {
@@ -144,28 +151,26 @@ export default function PaymentPage({ draft, reservation, holdRemainingLabel, on
         method: "POST",
         headers: { Authorization: `Bearer ${reservation.accessToken}` },
       };
+      const proofDetails = {
+        paymentMethodId: selectedMethod.id,
+        transactionId: transactionId.trim(),
+        customerName: draft.contact.fullName,
+        customerEmail: draft.contact.email,
+        customerPhone: draft.contact.mobile,
+        passengers: draft.passengers.map(({ seat, fullName }) => ({ seat, fullName })),
+      };
       const proofRequest = proofImage
         ? {
             ...proofOptions,
             body: proofImage,
             headers: {
               ...proofOptions.headers,
-              "X-Payment-Method-Id": selectedMethod.id,
-              "X-Transaction-Id": transactionId.trim(),
-              "X-Customer-Name": draft.contact.fullName,
-              "X-Customer-Email": draft.contact.email,
-              "X-Customer-Phone": draft.contact.mobile,
+              "X-Payment-Details": encodeHeaderJson(proofDetails),
             },
           }
         : {
             ...proofOptions,
-            body: {
-              paymentMethodId: selectedMethod.id,
-              transactionId: transactionId.trim(),
-              customerName: draft.contact.fullName,
-              customerEmail: draft.contact.email,
-              customerPhone: draft.contact.mobile,
-            },
+            body: proofDetails,
           };
       const { data: proofData } = await apiRequest(`/public/bookings/${reservation.id}/proof`, proofRequest);
       onBookingCreated(proofData.booking);

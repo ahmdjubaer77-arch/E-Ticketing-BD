@@ -75,7 +75,7 @@ export function validateUserFields(body, { creating }) {
 
 function userResponse(user) {
   return {
-    id: user.id,
+    id: String(user._id || user.id),
     fullName: user.fullName,
     email: user.email,
     phone: user.phone,

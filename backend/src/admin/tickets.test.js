@@ -11,8 +11,8 @@ test("expands a saved multi-seat booking into passenger tickets", () => {
     _id: bookingId,
     seatNumbers: ["A1", "B1"],
     tickets: [
-      { seatNumber: "A1", ticketCode: "ET-FIRST", status: "active" },
-      { seatNumber: "B1", ticketCode: "ET-SECOND", status: "used" },
+      { seatNumber: "A1", passengerName: "Ayesha Rahman", ticketCode: "ET-FIRST", status: "active" },
+      { seatNumber: "B1", passengerName: "Karim Rahman", ticketCode: "ET-SECOND", status: "used" },
     ],
     ticketCode: "ET-BOOKING",
     customerName: "Rahim Uddin",
@@ -31,11 +31,11 @@ test("expands a saved multi-seat booking into passenger tickets", () => {
 
   assert.equal(first.id, "ET-FIRST");
   assert.equal(first.bookingId, bookingId.toString());
-  assert.equal(first.passengerName, "Rahim Uddin · Passenger 1");
+  assert.equal(first.passengerName, "Ayesha Rahman");
   assert.equal(first.seatNumber, "A1");
   assert.equal(first.status, "active");
   assert.equal(first.ticketPrice, 750);
-  assert.equal(second.passengerName, "Rahim Uddin · Passenger 2");
+  assert.equal(second.passengerName, "Karim Rahman");
   assert.equal(second.status, "used");
 });
 

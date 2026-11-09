@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+﻿import React, { useEffect, useRef, useState } from "react";
 import {
   ArrowRight,
   Bus,
@@ -24,7 +24,7 @@ import {
   TriangleAlert,
   Upload,
 } from "lucide-react";
-import { apiRequest } from "./authApi.js";
+import { apiRequest, downloadApiFile } from "./authApi.js";
 import "./dashboard.css";
 
 const sections = [
@@ -49,7 +49,7 @@ function formatBookingDate(value, options) {
 }
 
 function formatBookingMoney(value) {
-  return `৳${new Intl.NumberFormat("en-BD").format(value)}`;
+  return `\u09F3 ${new Intl.NumberFormat("en-BD").format(value)}`;
 }
 
 function BookingTransportIcon({ transport }) {
@@ -131,31 +131,17 @@ function MyBookings({ onBrowseTrips, ticketsOnly = false }) {
     setPage(1);
   }, [search, status]);
 
-  function downloadTicket(booking) {
+  async function downloadTicket(booking, ticketIndex) {
     if (!["confirmed", "completed"].includes(booking.status) || booking.paymentStatus !== "paid") return;
-    const contents = [
-      "E-TICKETING — CONFIRMED E-TICKET",
-      `Booking reference: ${booking.reference}`,
-      `Passenger: ${booking.customerName}`,
-      `Journey: ${booking.departure} to ${booking.destination}`,
-      `Departure: ${formatBookingDate(booking.departureAt, { dateStyle: "long", timeStyle: "short" })}`,
-      `Operator: ${booking.operatorName}`,
-      `Transport: ${booking.transport}`,
-      `Seats: ${booking.seatNumbers.join(", ")}`,
-      `Total paid: ${formatBookingMoney(booking.totalAmount)}`,
-      "",
-      "Ticket codes:",
-      ...booking.ticketCodes,
-    ].join("\r\n");
-    const file = new Blob([contents], { type: "text/plain;charset=utf-8" });
-    const url = URL.createObjectURL(file);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `ticket-${booking.reference}.txt`;
-    link.click();
-    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    try {
+      const ticketCode = booking.ticketCodes[ticketIndex];
+      await downloadApiFile(`/tickets/${encodeURIComponent(ticketCode)}/pdf`, {
+        filename: `e-ticket-${booking.seatNumbers[ticketIndex]}-${ticketCode}.pdf`,
+      });
+    } catch (requestError) {
+      setError(requestError.message || "The ticket PDF could not be downloaded. Please refresh and try again.");
+    }
   }
-
   function timeRemaining(expiresAt) {
     const milliseconds = Math.max(0, new Date(expiresAt).getTime() - now);
     return `${Math.floor(milliseconds / 60_000)}:${String(Math.floor(milliseconds % 60_000 / 1000)).padStart(2, "0")}`;
@@ -164,14 +150,14 @@ function MyBookings({ onBrowseTrips, ticketsOnly = false }) {
   return (
     <div className={`my-bookings${ticketsOnly ? " tickets-only" : ""}`}>
       <div className="my-bookings-toolbar">
-        <label className="my-bookings-search"><Search size={16} /><input type="search" value={search} maxLength={100} placeholder={ticketsOnly ? "Search ticket, route, seat or reference" : "Search reference, route, seat or transaction ID"} aria-label={ticketsOnly ? "Search my tickets" : "Search my bookings"} onChange={(event) => { setPage(1); setSearch(event.target.value); }} />{search && <button type="button" aria-label="Clear booking search" onClick={() => { setPage(1); setSearch(""); }}>×</button>}</label>
+        <label className="my-bookings-search"><Search size={16} /><input type="search" value={search} maxLength={100} placeholder={ticketsOnly ? "Search ticket, route, seat or reference" : "Search reference, route, seat or transaction ID"} aria-label={ticketsOnly ? "Search my tickets" : "Search my bookings"} onChange={(event) => { setPage(1); setSearch(event.target.value); }} />{search && <button type="button" aria-label="Clear booking search" onClick={() => { setPage(1); setSearch(""); }}>Ã—</button>}</label>
         {!ticketsOnly && <label className="my-bookings-status"><span>Booking status</span><select value={status} aria-label="Filter bookings by status" onChange={(event) => { setPage(1); setStatus(event.target.value); }}><option value="">All bookings</option><option value="pending">Pending</option><option value="confirmed">Confirmed</option><option value="completed">Completed</option><option value="cancelled">Cancelled</option><option value="expired">Expired</option></select></label>}
-        <button className="dashboard-secondary-button my-bookings-refresh" type="button" disabled={loading} onClick={() => setRefreshKey((key) => key + 1)}><RefreshCw size={15} />{loading ? "Refreshing…" : "Refresh"}</button>
+        <button className="dashboard-secondary-button my-bookings-refresh" type="button" disabled={loading} onClick={() => setRefreshKey((key) => key + 1)}><RefreshCw size={15} />{loading ? "Refreshingâ€¦" : "Refresh"}</button>
       </div>
 
       {error && <div className="my-bookings-error" role="alert"><TriangleAlert size={17} /><span>{error}</span><button type="button" onClick={() => setRefreshKey((key) => key + 1)}>Try again</button></div>}
 
-      {loading && bookings.length === 0 && !error && <div className="my-bookings-message" role="status">{ticketsOnly ? "Loading your tickets…" : "Loading your bookings…"}</div>}
+      {loading && bookings.length === 0 && !error && <div className="my-bookings-message" role="status">{ticketsOnly ? "Loading your ticketsâ€¦" : "Loading your bookingsâ€¦"}</div>}
       {!loading && !error && bookings.length === 0 && (
         <div className="my-bookings-empty">
           <span><CalendarCheck size={25} /></span>
@@ -192,7 +178,7 @@ function MyBookings({ onBrowseTrips, ticketsOnly = false }) {
                 <span className="my-booking-icon"><BookingTransportIcon transport={booking.transport} /></span>
                 <span className="my-booking-primary">
                   <strong>{booking.departure} <ArrowRight size={14} /> {booking.destination}</strong>
-                  <small>{booking.transport} · {booking.operatorName} · {formatBookingDate(booking.departureAt, { day: "2-digit", month: "short", year: "numeric" })}</small>
+                  <small>{booking.transport} Â· {booking.operatorName} Â· {formatBookingDate(booking.departureAt, { day: "2-digit", month: "short", year: "numeric" })}</small>
                 </span>
                 <span className="my-ticket-summary-meta">
                   <span className={`my-booking-status ${booking.status}`}><i />{bookingStatusLabels[booking.status] || booking.status}</span>
@@ -202,14 +188,22 @@ function MyBookings({ onBrowseTrips, ticketsOnly = false }) {
               </button>
               {ticketsOnly && (
                 <div className="my-ticket-downloads">
-                  <div className="my-ticket-code-list" aria-label="Ticket codes">
+                  <div className="my-ticket-download-heading"><strong><TicketCheck size={16} /> Your issued tickets</strong><span>{booking.ticketCodes.length} {booking.ticketCodes.length === 1 ? "ticket" : "tickets"}</span></div>
+                  <div className="my-ticket-options">
                     {booking.ticketCodes.map((code, index) => (
-                      <span key={code}><small>SEAT {booking.seatNumbers[index]}</small><strong>{code}</strong></span>
+                      <div className="my-ticket-option" key={code}>
+                        <div className="my-ticket-option-info">
+                          <span className="my-ticket-seat-label">SEAT {booking.seatNumbers[index]}</span>
+                          <strong>{booking.ticketPassengerNames?.[index] || booking.customerName}</strong>
+                          <small>Ticket ID <b>{code}</b></small>
+                        </div>
+                        {booking.ticketQrCodes?.[index] && <img className="my-ticket-qr" src={booking.ticketQrCodes[index]} alt={`QR code for ticket ${code}`} />}
+                        <button className="dashboard-primary-button" type="button" onClick={() => downloadTicket(booking, index)}>
+                          <Download size={15} /> Download PDF
+                        </button>
+                      </div>
                     ))}
                   </div>
-                  <button className="dashboard-primary-button" type="button" onClick={() => downloadTicket(booking)}>
-                    <Download size={15} /> Download e-ticket
-                  </button>
                 </div>
               )}
               {expanded && (
@@ -223,11 +217,11 @@ function MyBookings({ onBrowseTrips, ticketsOnly = false }) {
                     <div><small>BOOKED ON</small><strong>{formatBookingDate(booking.bookedAt, { dateStyle: "medium", timeStyle: "short" })}</strong></div>
                   </div>
                   {hasActiveTimer && <p className="my-booking-notice pending"><Clock3 size={15} />Seat hold expires in <strong>{timeRemaining(booking.expiresAt)}</strong>. Submit payment proof before the timer ends.</p>}
-                  {booking.paymentProof && <p className={`my-booking-notice ${booking.paymentProof.reviewStatus}`}><CreditCard size={15} />Payment proof {booking.paymentProof.reviewStatus === "submitted" ? "is waiting for admin review" : `was ${booking.paymentProof.reviewStatus}`}{booking.paymentProof.transactionId && <> · Transaction ID <strong>{booking.paymentProof.transactionId}</strong></>}</p>}
+                  {booking.paymentProof && <p className={`my-booking-notice ${booking.paymentProof.reviewStatus}`}><CreditCard size={15} />Payment proof {booking.paymentProof.reviewStatus === "submitted" ? "is waiting for admin review" : `was ${booking.paymentProof.reviewStatus}`}{booking.paymentProof.transactionId && <> Â· Transaction ID <strong>{booking.paymentProof.transactionId}</strong></>}</p>}
                   {!booking.paymentProof && booking.paymentStatus === "pending" && <p className="my-booking-notice pending"><Clock3 size={15} />Payment proof has not been submitted for this reservation.</p>}
-                  {isPaid && booking.ticketCodes.length > 0 && <div className="my-booking-tickets"><div><Ticket size={16} /><strong>Your ticket codes</strong></div>{booking.ticketCodes.map((code, index) => <span key={code}>Seat {booking.seatNumbers[index]} <strong>{code}</strong></span>)}</div>}
+                  {isPaid && booking.ticketCodes.length > 0 && <div className="my-booking-tickets"><div><Ticket size={16} /><strong>Your ticket codes</strong></div>{booking.ticketCodes.map((code, index) => <span key={code}>{booking.ticketPassengerNames?.[index] || booking.customerName} · Seat {booking.seatNumbers[index]} <strong>{code}</strong>{booking.ticketQrCodes?.[index] && <img className="my-ticket-qr" src={booking.ticketQrCodes[index]} alt={`QR code for ticket ${code}`} />}</span>)}</div>}
                   <div className="my-booking-actions">
-                    {isPaid && booking.ticketCodes.length > 0 && <button className="dashboard-primary-button" type="button" onClick={() => downloadTicket(booking)}><Download size={15} />Download ticket</button>}
+                    {isPaid && booking.ticketCodes.map((code, index) => <button className="dashboard-primary-button" type="button" key={code} onClick={() => downloadTicket(booking, index)}><Download size={15} />Download seat {booking.seatNumbers[index]} PDF</button>)}
                     <span>{isPaid ? <><CheckCircle2 size={15} /> Payment confirmed</> : <><CalendarDays size={15} />Booking and payment updates appear here</>}</span>
                   </div>
                 </div>
@@ -237,7 +231,7 @@ function MyBookings({ onBrowseTrips, ticketsOnly = false }) {
         })}
       </div>
 
-      {pagination.pages > 1 && <div className="my-bookings-pagination"><span>Showing {((page - 1) * 10) + 1}–{Math.min(page * 10, pagination.total)} of {pagination.total}</span><div><button type="button" disabled={page <= 1 || loading} onClick={() => setPage((current) => current - 1)}>Previous</button><span>Page {page} of {pagination.pages}</span><button type="button" disabled={page >= pagination.pages || loading} onClick={() => setPage((current) => current + 1)}>Next</button></div></div>}
+      {pagination.pages > 1 && <div className="my-bookings-pagination"><span>Showing {((page - 1) * 10) + 1}â€“{Math.min(page * 10, pagination.total)} of {pagination.total}</span><div><button type="button" disabled={page <= 1 || loading} onClick={() => setPage((current) => current - 1)}>Previous</button><span>Page {page} of {pagination.pages}</span><button type="button" disabled={page >= pagination.pages || loading} onClick={() => setPage((current) => current + 1)}>Next</button></div></div>}
     </div>
   );
 }
@@ -521,7 +515,7 @@ export default function UserDashboard({ user, initialSection = "profile", onUser
           ))}
           <button type="button" className="dashboard-logout" onClick={handleLogout} disabled={loggingOut}>
             <LogOut size={18} />
-            <span>{loggingOut ? "Signing out…" : "Logout"}</span>
+            <span>{loggingOut ? "Signing outâ€¦" : "Logout"}</span>
           </button>
           {logoutError && <p className="dashboard-logout-error" role="alert">{logoutError}</p>}
         </nav>
@@ -545,7 +539,7 @@ export default function UserDashboard({ user, initialSection = "profile", onUser
                   {user.profileImage ? <img src={user.profileImage} alt={`${user.fullName}'s profile`} /> : user.fullName.trim().charAt(0).toUpperCase()}
                 </div>
                 <button type="button" className="dashboard-image-action" onClick={() => fileInput.current?.click()} disabled={uploadingImage}>
-                  <ImagePlus size={15} /> {uploadingImage ? "Uploading…" : "Change photo"}
+                  <ImagePlus size={15} /> {uploadingImage ? "Uploadingâ€¦" : "Change photo"}
                 </button>
                 {user.profileImage && <button className="dashboard-remove-image" type="button" onClick={removeImage}>Remove</button>}
                 <input ref={fileInput} className="dashboard-file-input" type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => prepareImage(event.target.files?.[0])} />
@@ -556,7 +550,7 @@ export default function UserDashboard({ user, initialSection = "profile", onUser
                   <label><span>Full name</span><input required minLength={2} maxLength={100} value={profileDraft.fullName} onChange={(event) => setProfileDraft((draft) => ({ ...draft, fullName: event.target.value }))} /></label>
                   <label><span>Mobile number</span><input type="tel" maxLength={24} value={profileDraft.phone} onChange={(event) => setProfileDraft((draft) => ({ ...draft, phone: event.target.value }))} /></label>
                   <div className="dashboard-form-actions">
-                    <button className="dashboard-primary-button" disabled={savingProfile}>{savingProfile ? "Saving…" : "Save changes"}</button>
+                    <button className="dashboard-primary-button" disabled={savingProfile}>{savingProfile ? "Savingâ€¦" : "Save changes"}</button>
                     <button className="dashboard-secondary-button" type="button" onClick={() => { setProfileDraft({ fullName: user.fullName, phone: user.phone || "" }); setEditingProfile(false); }}>Cancel</button>
                   </div>
                 </form>
@@ -567,7 +561,7 @@ export default function UserDashboard({ user, initialSection = "profile", onUser
                     <div><dt>Email address</dt><dd>{user.email}</dd></div>
                     <div><dt>Mobile number</dt><dd>{user.phone || "Not provided"}</dd></div>
                     <div><dt>Email verification</dt><dd className="dashboard-verified"><CheckCircle2 size={15} /> Verified</dd></div>
-                    <div><dt>Account created</dt><dd>{user.createdAt ? new Date(user.createdAt).toLocaleDateString() : "—"}</dd></div>
+                    <div><dt>Account created</dt><dd>{user.createdAt ? new Date(user.createdAt).toLocaleDateString() : "â€”"}</dd></div>
                   </dl>
                   <button type="button" className="dashboard-primary-button dashboard-edit-button" onClick={() => setEditingProfile(true)}>Edit profile</button>
                 </>
@@ -577,7 +571,7 @@ export default function UserDashboard({ user, initialSection = "profile", onUser
 
           {section === "notifications" && (
             <div className="dashboard-notifications">
-              {notificationsLoading ? <p className="dashboard-loading-copy">Loading notifications…</p> : notificationsError ? (
+              {notificationsLoading ? <p className="dashboard-loading-copy">Loading notificationsâ€¦</p> : notificationsError ? (
                 <div className="dashboard-inline-error" role="alert">{notificationsError}</div>
               ) : notifications.length === 0 ? (
                 <div className="dashboard-empty-state"><span><Bell size={23} /></span><h3>You&apos;re all caught up</h3><p>New account and booking notifications will appear here.</p></div>
@@ -607,7 +601,7 @@ export default function UserDashboard({ user, initialSection = "profile", onUser
                 <label><span>Current password</span><input type="password" autoComplete="current-password" required value={passwordDraft.currentPassword} onChange={(event) => setPasswordDraft((draft) => ({ ...draft, currentPassword: event.target.value }))} /></label>
                 <label><span>New password</span><input type="password" autoComplete="new-password" minLength={8} required value={passwordDraft.password} onChange={(event) => setPasswordDraft((draft) => ({ ...draft, password: event.target.value }))} /></label>
                 <label><span>Confirm new password</span><input type="password" autoComplete="new-password" required value={passwordDraft.confirmPassword} onChange={(event) => setPasswordDraft((draft) => ({ ...draft, confirmPassword: event.target.value }))} /></label>
-                <button className="dashboard-primary-button" disabled={securityBusy}>{securityBusy ? "Saving…" : "Update password"}</button>
+                <button className="dashboard-primary-button" disabled={securityBusy}>{securityBusy ? "Savingâ€¦" : "Update password"}</button>
               </form>
               <section className="dashboard-settings-form">
                 <h3>Email security</h3>
@@ -634,7 +628,7 @@ export default function UserDashboard({ user, initialSection = "profile", onUser
                 <p>This permanently deletes your account and notifications. Booking and payment records are retained separately and are not deleted with your account.</p>
                 <label><span>Current password</span><input type="password" autoComplete="current-password" required value={deletion.currentPassword} onChange={(event) => setDeletion((current) => ({ ...current, currentPassword: event.target.value }))} /></label>
                 <label><span>Type DELETE ACCOUNT to confirm</span><input required value={deletion.confirmation} onChange={(event) => setDeletion((current) => ({ ...current, confirmation: event.target.value }))} /></label>
-                <button className="dashboard-danger-button" type="submit" disabled={securityBusy}>{securityBusy ? "Deleting…" : "Permanently delete account"}</button>
+                <button className="dashboard-danger-button" type="submit" disabled={securityBusy}>{securityBusy ? "Deletingâ€¦" : "Permanently delete account"}</button>
               </form>
             </div>
           )}

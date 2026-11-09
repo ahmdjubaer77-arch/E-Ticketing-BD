@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiRequest } from "./api.js";
-import { CreditCard, ExternalLink, Plus, RefreshCw, Save, Search, X } from "lucide-react";
+import { CreditCard, ExternalLink, Plus, RefreshCw, Save, Search, UserRound, X } from "lucide-react";
 import "./payment-management.css";
 
 const paymentStatuses = ["pending", "paid", "failed", "refunded"];
@@ -15,6 +15,11 @@ export default function PaymentManagement({ query, onToast }) {
   const [methods, setMethods] = useState([]);
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState("");
+  const [passengerSearch, setPassengerSearch] = useState("");
+  const [passengerResults, setPassengerResults] = useState([]);
+  const [passengerLoading, setPassengerLoading] = useState(false);
+  const [passengerSearched, setPassengerSearched] = useState(false);
+  const [passengerError, setPassengerError] = useState("");
   const [error, setError] = useState("");
   const [activeTab, setActiveTab] = useState("proofs");
   const [editingMethodId, setEditingMethodId] = useState("");
@@ -50,15 +55,55 @@ export default function PaymentManagement({ query, onToast }) {
   async function updatePayment(booking, paymentStatus) {
     setSavingId(booking.id);
     try {
-      const { booking: updated } = await apiRequest(`/admin/bookings/${booking.id}/payment-status`, {
+      const { booking: updated, emailDeliveryStatus } = await apiRequest(`/admin/bookings/${booking.id}/payment-status`, {
         method: "PATCH",
         body: { paymentStatus },
       });
       setBookings((current) => current.map((item) => item.id === booking.id ? updated : item));
-      onToast("Payment status updated", `${booking.id.slice(-8).toUpperCase()} is now ${paymentStatus}.`);
+      setPassengerResults((current) => current.map((item) => item.id === booking.id ? updated : item));
+      onToast(
+        paymentStatus === "paid" ? "Payment approved and booking confirmed" : "Payment status updated",
+        paymentStatus === "paid"
+          ? `${updated.ticketGenerationStatus === "generated" ? `Ticket${updated.ticketCodes.length === 1 ? "" : "s"} ${updated.ticketCodes.join(", ")} issued.` : "Ticket generation is pending."} Booking ${booking.id.slice(-8).toUpperCase()} is confirmed. Email: ${emailDeliveryStatus === "accepted" ? "accepted by Gmail SMTP" : emailDeliveryStatus === "no-recipient" ? "no recipient address" : "not sent; use Resend email"}.`
+          : `${booking.id.slice(-8).toUpperCase()} is now ${paymentStatus}.`,
+      );
     } catch (requestError) {
       onToast("Payment update failed", requestError.message);
       await loadPayments();
+    } finally {
+      setSavingId("");
+    }
+  }
+
+  async function searchPassenger(event) {
+    event.preventDefault();
+    const term = passengerSearch.trim();
+    if (term.length < 3) {
+      setPassengerError("Enter at least 3 characters to search.");
+      setPassengerSearched(false);
+      return;
+    }
+    setPassengerLoading(true);
+    setPassengerError("");
+    setPassengerSearched(true);
+    try {
+      const { bookings: matches } = await apiRequest(`/admin/bookings/passenger-search?q=${encodeURIComponent(term)}`);
+      setPassengerResults(matches);
+    } catch (requestError) {
+      setPassengerError(requestError.message || "Passenger search failed.");
+      setPassengerResults([]);
+    } finally {
+      setPassengerLoading(false);
+    }
+  }
+
+  async function resendConfirmationEmail(booking) {
+    setSavingId(booking.id);
+    try {
+      await apiRequest(`/admin/bookings/${booking.id}/confirmation-email`, { method: "POST" });
+      onToast("Confirmation email sent", `Gmail SMTP accepted the message for ${booking.customerEmail}.`);
+    } catch (requestError) {
+      onToast("Email could not be sent", requestError.message);
     } finally {
       setSavingId("");
     }
@@ -126,6 +171,25 @@ export default function PaymentManagement({ query, onToast }) {
       <div className="payment-management-live"><span /> MANUAL PAYMENT CONTROL <span>Payment statuses are admin-managed; no gateway charges are processed.</span><button type="button" aria-label="Refresh payments" disabled={loading} onClick={loadPayments}><RefreshCw size={14} /></button></div>
       {error && <div className="payment-management-error" role="alert"><span>{error}</span><button type="button" onClick={loadPayments}>Try again</button></div>}
       <header className="payment-management-heading"><div><span>WORKSPACE · PAYMENTS</span><h1>Payment Management</h1><p>Set payment status for bookings and release unpaid reservations when needed.</p></div><button type="button" disabled={loading} onClick={loadPayments}><RefreshCw size={15} />Refresh</button></header>
+      <section className="passenger-lookup">
+        <header><div><span>PASSENGER SUPPORT</span><h2>Find a passenger</h2><p>Search using a ticket ID, mobile number, or email to check passenger and payment proof details.</p></div><UserRound size={20} /></header>
+        <form onSubmit={searchPassenger}>
+          <label><Search size={16} /><input value={passengerSearch} onChange={(event) => setPassengerSearch(event.target.value)} placeholder="Ticket ID, mobile number, or Gmail" aria-label="Search passenger by ticket ID, mobile number, or email" /><button type="submit" disabled={passengerLoading}><Search size={14} />{passengerLoading ? "Searching…" : "Find passenger"}</button></label>
+          {passengerError && <p className="passenger-lookup-message error" role="alert">{passengerError}</p>}
+        </form>
+        {passengerSearched && !passengerLoading && !passengerError && passengerResults.length === 0 && <p className="passenger-lookup-empty">No passenger matched that ticket ID, phone number, or email.</p>}
+        {passengerResults.length > 0 && <div className="passenger-lookup-results" aria-live="polite">
+          {passengerResults.map((booking) => <article className="passenger-result-card" key={booking.id}>
+            <header><div><strong>{booking.customerName}</strong><span>{booking.customerEmail || "No email"} · {booking.customerPhone || "No mobile"}</span></div><small>Booking {booking.id.slice(-8).toUpperCase()}</small></header>
+            <div className="passenger-result-journey"><strong>{booking.departure} <span>→</span> {booking.destination}</strong><small>{new Intl.DateTimeFormat("en-BD", { dateStyle: "medium", timeStyle: "short" }).format(new Date(booking.departureAt))} · {booking.operatorName}</small></div>
+            <div className="passenger-ticket-list">{(booking.ticketPassengers || []).map((passenger) => <div key={passenger.ticketCode}><span><strong>{passenger.passengerName}</strong><small>Seat {passenger.seatNumber}</small></span><code>{passenger.ticketCode}</code></div>)}</div>
+            <section className="passenger-proof-detail"><div><span className="passenger-proof-eyebrow">PAYMENT PROOF</span><strong>{booking.paymentProof ? `${booking.paymentProof.paymentMethodName} · ${booking.paymentProof.accountNumber}` : "No payment proof submitted"}</strong>{booking.paymentProof && <><small>Transaction ID: {booking.paymentProof.transactionId}</small><small>Submitted {new Intl.DateTimeFormat("en-BD", { dateStyle: "medium", timeStyle: "short" }).format(new Date(booking.paymentProof.submittedAt))} · {booking.paymentProof.reviewStatus}</small></>}</div>
+              {booking.paymentProof?.hasImage && <a className="passenger-proof-image" href={`/api/admin/bookings/${booking.id}/payment-proof-image`} target="_blank" rel="noreferrer"><img src={`/api/admin/bookings/${booking.id}/payment-proof-image`} alt={`Payment proof submitted by ${booking.customerName}`} /><span><ExternalLink size={12} />Open proof</span></a>}
+              <label className="passenger-proof-status">{amount(booking.totalAmount)}<select aria-label={`Payment status for ${booking.customerName}`} value={booking.paymentStatus} disabled={!['pending', 'confirmed'].includes(booking.status) || savingId === booking.id} onChange={(event) => updatePayment(booking, event.target.value)}>{paymentStatuses.map((status) => <option key={status} value={status}>{status[0].toUpperCase() + status.slice(1)}</option>)}</select></label>
+            </section>
+          </article>)}
+        </div>}
+      </section>
       <section className="payment-management-stats" aria-label="Payment status counts">
         {paymentStatuses.map((status) => <article key={status}><small>{status}</small><strong>{counts[status]}</strong></article>)}
       </section>
@@ -144,7 +208,7 @@ export default function PaymentManagement({ query, onToast }) {
               <td><strong>{booking.departure} → {booking.destination}</strong><small>{new Intl.DateTimeFormat("en-BD", { dateStyle: "medium", timeStyle: "short" }).format(new Date(booking.departureAt))}</small></td>
               <td>{amount(booking.totalAmount)}</td>
               <td className="payment-proof-cell">{booking.paymentProof ? <><strong>{booking.paymentProof.paymentMethodName} · {booking.paymentProof.accountNumber}</strong><small>TrxID: {booking.paymentProof.transactionId}</small><small>{new Intl.DateTimeFormat("en-BD", { dateStyle: "medium", timeStyle: "short" }).format(new Date(booking.paymentProof.submittedAt))}</small>{booking.paymentProof.hasImage && <a className="payment-proof-image-link" href={`/api/admin/bookings/${booking.id}/payment-proof-image`} target="_blank" rel="noreferrer"><img src={`/api/admin/bookings/${booking.id}/payment-proof-image`} alt={`Payment screenshot for booking ${booking.id}`} /><span><ExternalLink size={12} />View screenshot</span></a>}</> : <small>No proof submitted</small>}</td>
-              <td><label className="payment-management-status"><CreditCard size={14} /><select aria-label={`Payment status for booking ${booking.id}`} value={booking.paymentStatus} disabled={!active || savingId === booking.id} onChange={(event) => updatePayment(booking, event.target.value)}>{paymentStatuses.map((status) => <option value={status} key={status}>{status[0].toUpperCase() + status.slice(1)}</option>)}</select>{savingId === booking.id && <span className="payment-management-saving">Saving…</span>}<small>{booking.paymentProof?.reviewStatus || "manual"}</small></label></td>
+              <td><label className="payment-management-status"><CreditCard size={14} /><select aria-label={`Payment status for booking ${booking.id}`} value={booking.paymentStatus} disabled={!active || savingId === booking.id} onChange={(event) => updatePayment(booking, event.target.value)}>{paymentStatuses.map((status) => <option value={status} key={status}>{status[0].toUpperCase() + status.slice(1)}</option>)}</select>{savingId === booking.id && <span className="payment-management-saving">Saving…</span>}<small>{booking.paymentProof?.reviewStatus || "manual"}</small>{booking.paymentStatus === "paid" && booking.status === "confirmed" && booking.customerEmail && <button type="button" disabled={savingId === booking.id} onClick={() => resendConfirmationEmail(booking)}>Resend email</button>}</label></td>
               <td>{booking.expiresAt && booking.status === "pending" ? new Intl.DateTimeFormat("en-BD", { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(new Date(booking.expiresAt)) : "—"}</td>
             </tr>;
           })}

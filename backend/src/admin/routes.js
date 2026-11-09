@@ -11,7 +11,7 @@ import { createAdminVehiclesRouter } from "./vehicles.js";
 import { createAdminPaymentMethodsRouter } from "./payment-methods.js";
 import { createAdminDestinationsRouter } from "./destinations.js";
 
-export function createAdminRouter(config) {
+export function createAdminRouter(config, mailer) {
   const router = Router();
   const { requireAuth, requireRole } = createAuthMiddleware(config);
 
@@ -29,7 +29,7 @@ export function createAdminRouter(config) {
   });
 
   router.use("/overview", createAdminOverviewRouter());
-  router.use("/bookings", createAdminBookingsRouter());
+  router.use("/bookings", createAdminBookingsRouter({ mailer, config }));
   router.use("/payment-methods", createAdminPaymentMethodsRouter());
   router.use("/users", createAdminUsersRouter());
   router.use("/operators", createAdminOperatorsRouter(config));

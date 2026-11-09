@@ -1,7 +1,10 @@
 import { randomBytes } from "node:crypto";
 import { Router } from "express";
 import mongoose from "mongoose";
+import QRCode from "qrcode";
 import Booking from "../models/Booking.js";
+import Notification from "../models/Notification.js";
+import User from "../models/User.js";
 import Schedule from "../models/Schedule.js";
 import { expirePendingBookings } from "../bookings/expiration.js";
 
@@ -47,8 +50,18 @@ export function parseAdminBookingInput(body) {
 }
 
 function bookingResponse(booking) {
-  const passengers = booking.seatNumbers.length;
+  const seatNumbers = Array.isArray(booking.seatNumbers) ? booking.seatNumbers : [];
+  const tickets = Array.isArray(booking.tickets) ? booking.tickets : [];
+  const passengers = seatNumbers.length;
   const baseFare = booking.farePerSeat * passengers;
+  const ticketPassengers = seatNumbers.map((seatNumber) => {
+    const ticket = tickets.find((item) => item.seatNumber === seatNumber);
+    return {
+      seatNumber,
+      passengerName: ticket?.passengerName || booking.customerName,
+      ticketCode: ticket?.ticketCode || `${booking.ticketCode}-${seatNumber}`,
+    };
+  });
   return {
     id: booking._id.toString(),
     scheduleId: booking.scheduleId.toString(),
@@ -62,7 +75,7 @@ function bookingResponse(booking) {
     departureAt: booking.departureAt,
     arrivalAt: booking.arrivalAt,
     passengers,
-    seatNumbers: booking.seatNumbers,
+    seatNumbers,
     baseFare,
     serviceFee: 0,
     discount: 0,
@@ -80,11 +93,52 @@ function bookingResponse(booking) {
     expiresAt: booking.expiresAt,
     bookedAt: booking.createdAt,
     ticketCode: booking.ticketCode,
+    ticketCodes: ticketPassengers.map((ticket) => ticket.ticketCode),
+    ticketPassengers,
+    ticketGenerationStatus: tickets.length >= passengers ? "generated" : "pending",
   };
+}
+
+function escapeRegex(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+export function buildPassengerSearchQuery(value) {
+  const search = typeof value === "string" ? value.trim() : "";
+  if (search.length < 3 || search.length > 254) return null;
+  const exactPattern = escapeRegex(search);
+  const alternatives = [
+    { ticketCode: { $regex: exactPattern, $options: "i" } },
+    { "tickets.ticketCode": { $regex: exactPattern, $options: "i" } },
+  ];
+  if (search.includes("@")) {
+    alternatives.push({ customerEmail: { $regex: escapeRegex(search), $options: "i" } });
+  } else {
+    alternatives.push({ customerEmail: { $regex: exactPattern, $options: "i" } });
+  }
+  const digits = search.replace(/\D/g, "");
+  if (digits.length >= 3) {
+    const phoneVariants = new Set([digits]);
+    if (digits.startsWith("0") && digits.length === 11) {
+      phoneVariants.add(`880${digits.slice(1)}`);
+      phoneVariants.add(digits.slice(1));
+    }
+    if (digits.startsWith("880") && digits.length >= 12) phoneVariants.add(`0${digits.slice(3)}`);
+    for (const variant of phoneVariants) {
+      const phonePattern = variant.split("").map(escapeRegex).join("\\D*");
+      alternatives.push({ customerPhone: { $regex: phonePattern } });
+    }
+  }
+  return { $or: alternatives };
 }
 
 function makeTicketCode() {
   return `ET${randomBytes(10).toString("hex").toUpperCase()}`;
+}
+
+function ticketVerificationUrl(config, ticketCode) {
+  const path = `/api/tickets/verify/${encodeURIComponent(ticketCode)}`;
+  return config?.clientUrl ? new URL(path, config.clientUrl).toString() : path;
 }
 
 function ticketStatus(booking, seatNumber) {
@@ -108,9 +162,7 @@ export function ticketsForBooking(booking) {
       bookingId: booking._id.toString(),
       passengerIndex,
       passengerCount: booking.seatNumbers.length,
-      passengerName: booking.seatNumbers.length > 1
-        ? `${booking.customerName} · Passenger ${passengerIndex + 1}`
-        : booking.customerName,
+      passengerName: savedTicket?.passengerName || booking.customerName,
       customerEmail: booking.customerEmail,
       customerPhone: booking.customerPhone,
       transport: booking.transport,
@@ -125,20 +177,33 @@ export function ticketsForBooking(booking) {
       paymentStatus: booking.paymentStatus,
       status: ticketStatus(booking, seatNumber),
       ticketCode,
+      qrCode: savedTicket?.qrCode || "",
     };
   });
 }
 
-function ensureTicketRecords(booking) {
-  if (booking.tickets.length) return;
-  booking.tickets = booking.seatNumbers.map((seatNumber) => ({
-    seatNumber,
-    ticketCode: `${booking.ticketCode}-${seatNumber}`,
-    status: "active",
-  }));
+async function ensureTicketRecords(booking, config) {
+  const existingSeats = new Set(booking.tickets.map((ticket) => ticket.seatNumber));
+  for (const seatNumber of booking.seatNumbers) {
+    if (!existingSeats.has(seatNumber)) {
+      booking.tickets.push({
+        seatNumber,
+        passengerName: booking.customerName,
+        ticketCode: `${booking.ticketCode}-${seatNumber}`,
+        status: "active",
+      });
+    }
+  }
+  for (const ticket of booking.tickets) {
+    ticket.qrCode = await QRCode.toDataURL(ticketVerificationUrl(config, ticket.ticketCode), {
+      errorCorrectionLevel: "H",
+      margin: 1,
+      width: 220,
+    });
+  }
 }
 
-export function createAdminBookingsRouter() {
+export function createAdminBookingsRouter({ mailer, config } = {}) {
   const router = Router();
 
   router.get("/", async (_request, response, next) => {
@@ -159,10 +224,32 @@ export function createAdminBookingsRouter() {
     try {
       await expirePendingBookings();
       const bookings = await Booking.find().sort({ departureAt: 1, _id: 1 }).limit(500).lean();
+      const tickets = bookings.flatMap(ticketsForBooking);
+      await Promise.all(tickets.map(async (ticket) => {
+        ticket.qrCode = await QRCode.toDataURL(ticketVerificationUrl(config, ticket.ticketCode), { errorCorrectionLevel: "H", margin: 1, width: 220 });
+      }));
       return response.json({
         success: true,
         message: "Tickets retrieved.",
-        data: { tickets: bookings.flatMap(ticketsForBooking) },
+        data: { tickets },
+      });
+    } catch (error) {
+      return next(error);
+    }
+  });
+
+  router.get("/passenger-search", async (request, response, next) => {
+    try {
+      const searchQuery = buildPassengerSearchQuery(request.query.q);
+      if (!searchQuery) {
+        return response.status(400).json({ success: false, message: "Enter at least 3 characters to search by ticket ID, mobile number, or email." });
+      }
+      await expirePendingBookings();
+      const bookings = await Booking.find(searchQuery).sort({ createdAt: -1, _id: -1 }).limit(50).lean();
+      return response.json({
+        success: true,
+        message: bookings.length ? "Passenger matches found." : "No passengers matched your search.",
+        data: { bookings: bookings.map(bookingResponse) },
       });
     } catch (error) {
       return next(error);
@@ -279,6 +366,10 @@ export function createAdminBookingsRouter() {
         return response.status(400).json({ success: false, message: "One or more selected seats are outside this vehicle's capacity." });
       }
 
+      const customerAccount = values.customerEmail
+        ? await User.findOne({ email: values.customerEmail, role: "user", isActive: true, isEmailVerified: true }).select("_id").lean()
+        : null;
+
       const booking = await Booking.create({
         scheduleId,
         customerName: values.customerName,
@@ -294,10 +385,11 @@ export function createAdminBookingsRouter() {
         seatNumbers: values.seatNumbers,
         status: "confirmed",
         paymentStatus: "pending",
-        bookedBy: request.user.id,
+        bookedBy: customerAccount?._id || null,
         ticketCode: makeTicketCode(),
         tickets: values.seatNumbers.map((seatNumber) => ({
           seatNumber,
+          passengerName: values.customerName,
           ticketCode: makeTicketCode(),
           status: "active",
         })),
@@ -373,6 +465,35 @@ export function createAdminBookingsRouter() {
     }
   });
 
+  router.post("/:id/confirmation-email", async (request, response, next) => {
+    try {
+      if (!mongoose.isObjectIdOrHexString(request.params.id)) {
+        return response.status(400).json({ success: false, message: "Booking ID must be a valid MongoDB ObjectId." });
+      }
+      const booking = await Booking.findOne({
+        _id: request.params.id,
+        status: { $in: ["confirmed", "completed"] },
+        paymentStatus: "paid",
+      });
+      if (!booking) return response.status(409).json({ success: false, message: "Only paid, confirmed bookings can receive a confirmation email." });
+      if (!booking.customerEmail) return response.status(409).json({ success: false, message: "This booking has no customer email address." });
+      if (!mailer?.sendBookingConfirmation) return response.status(503).json({ success: false, message: "Email service is not configured." });
+      await ensureTicketRecords(booking, config);
+      try {
+        await mailer.sendBookingConfirmation({
+          booking,
+          ticketCodes: booking.tickets.map((ticket) => ticket.ticketCode),
+        });
+      } catch (error) {
+        console.error(`Booking confirmation resend failed (${error.code || "SMTP_ERROR"}).`);
+        return response.status(502).json({ success: false, message: "Gmail did not accept the confirmation email. Check the SMTP credentials and retry." });
+      }
+      return response.json({ success: true, message: "Confirmation email accepted by Gmail SMTP.", data: { emailDeliveryStatus: "accepted" } });
+    } catch (error) {
+      return next(error);
+    }
+  });
+
   router.patch("/:id/payment-status", async (request, response, next) => {
     try {
       await expirePendingBookings();
@@ -392,22 +513,90 @@ export function createAdminBookingsRouter() {
       }
       const now = new Date();
       const releasesSeats = paymentStatus === "failed" || paymentStatus === "refunded";
-      const booking = await Booking.findOneAndUpdate(
-        { _id: request.params.id, status: { $in: activeBookingStatuses } },
-        {
+      let booking;
+      if (paymentStatus === "paid") {
+        // Prepare ticket rows before changing payment state. Ticket rows are
+        // embedded in Booking, so this conditional write commits both in one
+        // MongoDB document update and only one concurrent approval can win.
+        const current = await Booking.findOne({ _id: request.params.id, status: { $in: activeBookingStatuses } });
+        if (!current) {
+          return response.status(404).json({ success: false, message: "Active booking not found. It may have expired or already been cancelled." });
+        }
+        if (current.paymentStatus !== "pending") {
+          return response.status(409).json({ success: false, message: "This payment has already been reviewed." });
+        }
+        if (current.paymentProof && current.paymentProof.reviewStatus !== "submitted") {
+          return response.status(409).json({ success: false, message: "This payment proof has already been reviewed." });
+        }
+        await ensureTicketRecords(current, config);
+        const update = {
           $set: {
-            paymentStatus,
-            status: paymentStatus === "paid" ? "confirmed" : releasesSeats ? "cancelled" : "pending",
-            expiresAt: paymentStatus === "paid" || releasesSeats ? null : new Date(now.getTime() + 3 * 60 * 1000),
+            paymentStatus: "paid",
+            status: "confirmed",
+            expiresAt: null,
+            tickets: current.tickets,
           },
-        },
-        { new: true },
-      );
-      if (!booking) {
-        return response.status(404).json({ success: false, message: "Active booking not found. It may have expired or already been cancelled." });
+        };
+        if (current.paymentProof) update.$set["paymentProof.reviewStatus"] = "approved";
+        booking = await Booking.findOneAndUpdate(
+          { _id: current._id, status: { $in: activeBookingStatuses }, paymentStatus: "pending" },
+          update,
+          { new: true, runValidators: true },
+        );
+        if (!booking) {
+          return response.status(409).json({ success: false, message: "This payment was updated by another administrator. Refresh the booking." });
+        }
+        const notificationOwner = booking.bookedBy
+          ? await User.findOne({ _id: booking.bookedBy, role: "user", isActive: true }).select("_id").lean()
+          : null;
+        const emailOwner = !notificationOwner && booking.customerEmail
+          ? await User.findOne({ email: booking.customerEmail, role: "user", isActive: true, isEmailVerified: true }).select("_id").lean()
+          : null;
+        const notificationUserId = notificationOwner?._id || emailOwner?._id;
+        if (notificationUserId) {
+          try {
+            await Notification.create({
+              userId: notificationUserId,
+              category: "ticket",
+              title: "Payment approved and ticket issued",
+              message: `Your booking from ${booking.departure} to ${booking.destination} is confirmed. Ticket${booking.tickets.length === 1 ? "" : "s"} ${booking.tickets.map((ticket) => ticket.ticketCode).join(", ")} ${booking.tickets.length === 1 ? "is" : "are"} ready.`,
+              metadata: { bookingId: booking._id.toString(), ticketCodes: booking.tickets.map((ticket) => ticket.ticketCode) },
+            });
+          } catch {
+            console.error("A booking approval notification could not be recorded.");
+          }
+        }
+        let emailDeliveryStatus = booking.customerEmail ? "failed" : "no-recipient";
+        if (booking.customerEmail && mailer?.sendBookingConfirmation) {
+          try {
+            await mailer.sendBookingConfirmation({
+              booking,
+              ticketCodes: booking.tickets.map((ticket) => ticket.ticketCode),
+            });
+            emailDeliveryStatus = "accepted";
+          } catch (error) {
+            console.error(`Booking confirmation email failed (${error.code || "SMTP_ERROR"}).`);
+          }
+        }
+        booking.$locals.emailDeliveryStatus = emailDeliveryStatus;
+      } else {
+        booking = await Booking.findOneAndUpdate(
+          { _id: request.params.id, status: { $in: activeBookingStatuses }, paymentStatus: { $ne: "paid" } },
+          {
+            $set: {
+              paymentStatus,
+              status: releasesSeats ? "cancelled" : "pending",
+              expiresAt: releasesSeats ? null : new Date(now.getTime() + 3 * 60 * 1000),
+            },
+          },
+          { new: true },
+        );
       }
-      if (booking.paymentProof && paymentStatus !== "pending") {
-        booking.paymentProof.reviewStatus = paymentStatus === "paid" ? "approved" : "rejected";
+      if (!booking) {
+        return response.status(404).json({ success: false, message: "Active booking not found. It may have expired, already been reviewed, or already been cancelled." });
+      }
+      if (booking.paymentProof && paymentStatus !== "pending" && paymentStatus !== "paid") {
+        booking.paymentProof.reviewStatus = "rejected";
         await booking.save();
       }
       if (releasesSeats) {
@@ -421,10 +610,15 @@ export function createAdminBookingsRouter() {
       }
       return response.json({
         success: true,
-        message: releasesSeats
+        message: paymentStatus === "paid"
+          ? "Payment approved, booking confirmed, and tickets issued."
+          : releasesSeats
           ? `Payment marked ${paymentStatus}; booking cancelled and seats released.`
           : `Payment status updated to ${paymentStatus}.`,
-        data: { booking: bookingResponse(booking) },
+        data: {
+          booking: bookingResponse(booking),
+          ...(paymentStatus === "paid" ? { emailDeliveryStatus: booking.$locals.emailDeliveryStatus || (booking.customerEmail ? "failed" : "no-recipient") } : {}),
+        },
       });
     } catch (error) {
       return next(error);
@@ -448,7 +642,7 @@ export function createAdminBookingsRouter() {
         return response.status(409).json({ success: false, message: "This ticket has expired and cannot be verified." });
       }
 
-      ensureTicketRecords(booking);
+      await ensureTicketRecords(booking, config);
       const ticket = booking.tickets.find((item) => item.ticketCode === request.params.ticketCode);
       if (!ticket) return response.status(404).json({ success: false, message: "Ticket code not found for this booking." });
       if (ticket.status === "used") {

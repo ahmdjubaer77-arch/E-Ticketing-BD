@@ -38,7 +38,9 @@ const bookingSchema = new mongoose.Schema(
     tickets: {
       type: [{
         seatNumber: { type: String, required: true },
+        passengerName: { type: String, trim: true, maxlength: 100, default: "" },
         ticketCode: { type: String, required: true },
+        qrCode: { type: String, default: "", maxlength: 20_000 },
         status: { type: String, enum: ["active", "used"], default: "active", required: true },
       }],
       default: [],
@@ -53,6 +55,7 @@ bookingSchema.index(
 );
 bookingSchema.index({ bookedBy: 1, createdAt: -1 });
 bookingSchema.index({ customerEmail: 1, createdAt: -1 });
+bookingSchema.index({ "tickets.ticketCode": 1 }, { unique: true, sparse: true });
 
 const Booking = mongoose.models.Booking || mongoose.model("Booking", bookingSchema);
 
